@@ -1,4 +1,4 @@
-# Voxceleron Engine
+# Voxceleron Engine v2
 
 A high-performance Vulkan-based voxel engine focused on efficient rendering and modern graphics techniques. This project aims to create a robust foundation for voxel-based games and simulations using modern graphics APIs.
 
@@ -6,9 +6,8 @@ A high-performance Vulkan-based voxel engine focused on efficient rendering and 
 
 The goal of this project is to create a voxel engine that:
 1. Uses modern Vulkan techniques for efficient rendering
-2. Implements efficient face culling and mesh generation
-3. Provides a solid foundation for future voxel-based games
-4. Demonstrates best practices in graphics programming
+2. Provides a solid foundation for future voxel-based games
+3. Demonstrates best practices in graphics programming
 
 ## Technical Implementation
 
@@ -18,7 +17,7 @@ The goal of this project is to create a voxel engine that:
 - Chunks are 16x16x16 voxel units
 - Each chunk manages its own mesh generation
 - Chunks are generated and loaded dynamically
-- Face culling is implemented at the chunk level to optimize rendering
+- Basic visibility checks at the chunk level for mesh generation
 - Chunk coordinates use integer vectors (glm::ivec3) for precise positioning
 - Chunk data structure includes:
   - 3D array of voxels (16x16x16)
@@ -42,7 +41,7 @@ The goal of this project is to create a voxel engine that:
 - Uses push constants for MVP matrix and lighting information
 - Implements depth testing for correct 3D rendering
 - Counter-clockwise vertex winding order
-- Face culling optimizations at both mesh and render pipeline levels
+- Basic visibility checks for mesh generation
 - Shader Implementation:
   - Vertex shader:
     - Handles MVP transformation

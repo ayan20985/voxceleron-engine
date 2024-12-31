@@ -1,0 +1,10 @@
+^C:\USERS\AYAN\DESKTOP\UNIVERSITY WORK\VOXCERON-ENGINE\BUILD\CMAKEFILES\827E445AEBE4B3EFF390A860A8221DCA\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" "-SC:/Users/Ayan/Desktop/University Work/voxceron-engine" "-BC:/Users/Ayan/Desktop/University Work/voxceron-engine/build" --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file "C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/voxceron.sln"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

@@ -46,7 +46,7 @@ See the main repository for build instructions.
 
 ### v1.0 - Initial Release
 - Basic voxel rendering engine
-- Efficient face culling
+- Basic visibility checks for mesh generation
 - Dynamic chunk loading
 - ImGui debug interface
 - Vulkan-based rendering pipeline 

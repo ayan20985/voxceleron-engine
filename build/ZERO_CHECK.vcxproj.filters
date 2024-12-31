@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Ayan\Desktop\University Work\voxceron-engine\build\CMakeFiles\827e445aebe4b3eff390a860a8221dca\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{11E2C4E0-C8A8-3B4C-9FC1-1411AB59C4FA}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
