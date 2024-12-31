@@ -1,6 +1,6 @@
-# Voxceron Engine
+# Voxceleron Engine v1.0
 
-A Vulkan-based voxel engine.
+A high-performance Vulkan-based voxel engine that focuses on efficient rendering and modern graphics techniques.
 
 ## Requirements
 
@@ -11,7 +11,7 @@ A Vulkan-based voxel engine.
 
 1. Make sure you have the latest Vulkan runtime installed on your system
 2. Extract all files maintaining the directory structure
-3. Run `voxceron.exe`
+3. Run `voxceleron.exe`
 
 ## Controls
 
@@ -23,8 +23,8 @@ A Vulkan-based voxel engine.
 ## Directory Structure
 
 ```
-voxceron/
-├── voxceron.exe
+voxceleron/
+├── voxceleron.exe
 └── shaders/
     ├── fragment_shader.frag.spv
     ├── vertex_shader.vert.spv
@@ -40,4 +40,13 @@ If the engine fails to start:
 
 ## Building from Source
 
-See the main repository for build instructions. 
+See the main repository for build instructions.
+
+## Version History
+
+### v1.0 - Initial Release
+- Basic voxel rendering engine
+- Efficient face culling
+- Dynamic chunk loading
+- ImGui debug interface
+- Vulkan-based rendering pipeline 
