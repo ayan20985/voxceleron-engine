@@ -23,11 +23,12 @@ Renderer::~Renderer() {
     cleanup();
 }
 
-void Renderer::init(VkInstance vulkanInstance, VkSurfaceKHR vulkanSurface) {
+void Renderer::init(VkInstance vulkanInstance, VkSurfaceKHR vulkanSurface, GLFWwindow* glfwWindow) {
     try {
         std::cout << "Initializing renderer..." << std::endl;
         instance = vulkanInstance;
         surface = vulkanSurface;
+        window = glfwWindow;
         
         std::cout << "Picking physical device..." << std::endl;
         pickPhysicalDevice();
@@ -77,18 +78,26 @@ void Renderer::init(VkInstance vulkanInstance, VkSurfaceKHR vulkanSurface) {
 
         // Initialize ImGui
         std::cout << "Initializing ImGui..." << std::endl;
-        ImGui::CreateContext();
+        IMGUI_CHECKVERSION();
+        if (ImGui::CreateContext() == nullptr) {
+            throw std::runtime_error("Failed to create ImGui context!");
+        }
         ImGui::StyleColorsDark();
         
         // Initialize ImGui Vulkan Implementation
-        ImGui_ImplGlfw_InitForVulkan(window, true);
+        std::cout << "Initializing ImGui GLFW implementation..." << std::endl;
+        if (!ImGui_ImplGlfw_InitForVulkan(window, true)) {
+            throw std::runtime_error("Failed to initialize ImGui GLFW implementation!");
+        }
         
         // Initialize ImGui Vulkan
+        std::cout << "Initializing ImGui Vulkan implementation..." << std::endl;
+        QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
         ImGui_ImplVulkan_InitInfo init_info = {};
         init_info.Instance = instance;
         init_info.PhysicalDevice = physicalDevice;
         init_info.Device = device;
-        init_info.QueueFamily = indices.graphicsFamily.value();
+        init_info.QueueFamily = queueFamilyIndices.graphicsFamily.value();
         init_info.Queue = graphicsQueue;
         init_info.PipelineCache = VK_NULL_HANDLE;
         init_info.DescriptorPool = descriptorPool;
@@ -97,15 +106,20 @@ void Renderer::init(VkInstance vulkanInstance, VkSurfaceKHR vulkanSurface) {
         init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
         init_info.Allocator = nullptr;
         init_info.CheckVkResultFn = nullptr;
+        init_info.RenderPass = renderPass;
         
-        ImGui_ImplVulkan_Init(&init_info, renderPass);
+        if (!ImGui_ImplVulkan_Init(&init_info)) {
+            throw std::runtime_error("Failed to initialize ImGui Vulkan implementation!");
+        }
 
         // Upload ImGui Fonts
-        VkCommandBuffer command_buffer = beginSingleTimeCommands();
-        ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
-        endSingleTimeCommands(command_buffer);
-        ImGui_ImplVulkan_DestroyFontUploadObjects();
+        std::cout << "Uploading ImGui fonts..." << std::endl;
+        if (!ImGui_ImplVulkan_CreateFontsTexture()) {
+            throw std::runtime_error("Failed to create ImGui fonts texture!");
+        }
         
+        std::cout << "ImGui initialization complete." << std::endl;
+
         std::cout << "Renderer initialization complete." << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Error during renderer initialization: " << e.what() << std::endl;
@@ -123,8 +137,13 @@ void Renderer::cleanup() {
 
             // Cleanup ImGui
             std::cout << "Cleaning up ImGui..." << std::endl;
-            ImGui_ImplVulkan_Shutdown();
-            ImGui::DestroyContext();
+            try {
+                ImGui_ImplVulkan_Shutdown();
+                ImGui_ImplGlfw_Shutdown();
+                ImGui::DestroyContext();
+            } catch (const std::exception& e) {
+                std::cerr << "Error during ImGui cleanup: " << e.what() << std::endl;
+            }
             
             if (vertexBuffer != VK_NULL_HANDLE) {
                 std::cout << "Cleaning up vertex buffer..." << std::endl;
@@ -133,7 +152,9 @@ void Renderer::cleanup() {
             }
             
             std::cout << "Cleaning up descriptor pool..." << std::endl;
-            vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+            if (descriptorPool != VK_NULL_HANDLE) {
+                vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+            }
             
             std::cout << "Cleaning up sync objects..." << std::endl;
             vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
@@ -175,34 +196,46 @@ void Renderer::cleanup() {
 
 void Renderer::draw() {
     try {
-        std::cout << "Starting frame..." << std::endl;
         updatePerformanceMetrics();
         calculateStatistics();
 
-        std::cout << "Waiting for fence..." << std::endl;
         vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
 
-        std::cout << "Acquiring next image..." << std::endl;
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            std::cout << "Swap chain out of date, skipping frame" << std::endl;
             return;
         } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             throw std::runtime_error("Failed to acquire swap chain image!");
         }
 
-        std::cout << "Resetting fence..." << std::endl;
         vkResetFences(device, 1, &inFlightFence);
-
-        std::cout << "Resetting command buffer..." << std::endl;
         vkResetCommandBuffer(commandBuffers[imageIndex], 0);
         
-        std::cout << "Recording command buffer..." << std::endl;
+        try {
+            // Start ImGui Frame
+            ImGui_ImplVulkan_NewFrame();
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
+
+            // Create ImGui window with debug info
+            ImGui::Begin("Debug Info", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+            ImGui::Text("FPS: %.1f", getFPS());
+            ImGui::Text("Total Faces: %d", getTotalFaces());
+            ImGui::Text("Culled Faces: %d", getCulledFaces());
+            ImGui::Text("Total Voxels: %d", getTotalVoxels());
+            ImGui::End();
+
+            // Render ImGui
+            ImGui::Render();
+        } catch (const std::exception& e) {
+            std::cerr << "Error during ImGui frame: " << e.what() << std::endl;
+            throw;
+        }
+        
         recordCommandBuffer(commandBuffers[imageIndex], imageIndex);
 
-        std::cout << "Preparing submit info..." << std::endl;
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -218,12 +251,10 @@ void Renderer::draw() {
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
-        std::cout << "Submitting command buffer..." << std::endl;
         if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS) {
             throw std::runtime_error("Failed to submit draw command buffer!");
         }
 
-        std::cout << "Preparing present info..." << std::endl;
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
@@ -234,17 +265,13 @@ void Renderer::draw() {
         presentInfo.pSwapchains = swapChains;
         presentInfo.pImageIndices = &imageIndex;
 
-        std::cout << "Presenting frame..." << std::endl;
         result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-            std::cout << "Swap chain out of date or suboptimal" << std::endl;
             return;
         } else if (result != VK_SUCCESS) {
             throw std::runtime_error("Failed to present swap chain image!");
         }
-
-        std::cout << "Frame completed successfully." << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Error during frame rendering: " << e.what() << std::endl;
         throw;
@@ -253,8 +280,6 @@ void Renderer::draw() {
 
 void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
     try {
-        std::cout << "Recording command buffer..." << std::endl;
-        
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
@@ -269,74 +294,109 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
         renderPassInfo.renderArea.offset = {0, 0};
         renderPassInfo.renderArea.extent = swapChainExtent;
 
-        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};  // Black background
+        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearColor;
 
-        std::cout << "Beginning render pass..." << std::endl;
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        std::cout << "Binding pipeline..." << std::endl;
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+        // Draw scene
+        if (vertexBuffer != VK_NULL_HANDLE && !vertices.empty()) {
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-        // Set up matrices and lighting
-        static float angle = 0.0f;
-        angle += 0.005f;  // Slower camera rotation
+            // Set up matrices and lighting
+            static float angle = 0.0f;
+            angle += 0.005f;  // Camera rotation speed
 
-        glm::mat4 model = glm::mat4(1.0f);  // No model transformation for now
-        glm::mat4 view = glm::lookAt(
-            glm::vec3(std::cos(angle) * 50.0f, 35.0f, std::sin(angle) * 50.0f),  // Camera circles around
-            glm::vec3(0.0f, 15.0f, 0.0f),  // Look at center of the scene
-            glm::vec3(0.0f, 1.0f, 0.0f)   // Up vector
-        );
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), 
-            static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
-            0.1f, 200.0f);  // Increased far plane for better view
-        // Vulkan's Y coordinate is inverted compared to OpenGL
-        proj[1][1] *= -1;
+            glm::mat4 model = glm::mat4(1.0f);  // No model transformation for now
+            glm::mat4 view = glm::lookAt(
+                glm::vec3(std::cos(angle) * 50.0f, 35.0f, std::sin(angle) * 50.0f),  // Camera circles around
+                glm::vec3(0.0f, 15.0f, 0.0f),  // Look at center of the scene
+                glm::vec3(0.0f, 1.0f, 0.0f)   // Up vector
+            );
+            glm::mat4 proj = glm::perspective(glm::radians(45.0f), 
+                static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
+                0.1f, 200.0f);  // Increased far plane for better view
+            
+            // Vulkan's Y coordinate is inverted compared to OpenGL
+            proj[1][1] *= -1;
 
-        // Calculate light direction
-        glm::vec3 lightDir = glm::normalize(glm::vec3(
-            std::cos(angle * 0.25f) * 0.5f,
-            -1.0f,  // Stronger downward light
-            std::sin(angle * 0.25f) * 0.5f
-        ));
+            // Calculate light direction
+            glm::vec3 lightDir = glm::normalize(glm::vec3(
+                std::cos(angle * 0.25f) * 0.5f,
+                -1.0f,  // Stronger downward light
+                std::sin(angle * 0.25f) * 0.5f
+            ));
 
-        // Set up push constants
-        PushConstants pushConstants{};
-        pushConstants.mvp = proj * view * model;
-        pushConstants.model = model;
-        pushConstants.lightDir = lightDir;
-        pushConstants.padding = 0.0f;
+            // Set up push constants
+            PushConstants pushConstants{};
+            pushConstants.mvp = proj * view * model;
+            pushConstants.model = model;
+            pushConstants.lightDir = lightDir;
+            pushConstants.padding = 0.0f;
 
-        std::cout << "Setting push constants..." << std::endl;
-        vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            0, sizeof(PushConstants), &pushConstants);
+            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                0, sizeof(PushConstants), &pushConstants);
 
-        if (!vertices.empty() && vertexBuffer != VK_NULL_HANDLE) {
-            std::cout << "Binding vertex buffer..." << std::endl;
             VkBuffer vertexBuffers[] = {vertexBuffer};
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
             vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
         }
 
-        // Re-enable ImGui rendering
-        std::cout << "Rendering ImGui..." << std::endl;
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+        // Record ImGui draw commands
+        try {
+            ImDrawData* draw_data = ImGui::GetDrawData();
+            if (draw_data) {
+                ImGui_ImplVulkan_RenderDrawData(draw_data, commandBuffer);
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error during ImGui command recording: " << e.what() << std::endl;
+            throw;
+        }
 
-        std::cout << "Ending render pass..." << std::endl;
         vkCmdEndRenderPass(commandBuffer);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("Failed to record command buffer!");
         }
-        
-        std::cout << "Command buffer recording complete." << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Error during command buffer recording: " << e.what() << std::endl;
         throw;
     }
+}
+
+VkCommandBuffer Renderer::beginSingleTimeCommands() {
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = commandPool;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer commandBuffer;
+    vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+    return commandBuffer;
+}
+
+void Renderer::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
+    vkEndCommandBuffer(commandBuffer);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+
+    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphicsQueue);
+
+    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
 void Renderer::pickPhysicalDevice() {
@@ -490,8 +550,19 @@ void Renderer::createSwapChain() {
         }
     }
 
-    // Choose present mode
-    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    // Choose present mode (prefer immediate for uncapped FPS)
+    uint32_t presentModeCount;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, nullptr);
+    std::vector<VkPresentModeKHR> presentModes(presentModeCount);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, presentModes.data());
+
+    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;  // Fallback to VSync
+    for (const auto& mode : presentModes) {
+        if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) {  // No VSync, uncapped FPS
+            presentMode = mode;
+            break;
+        }
+    }
 
     // Choose swap extent
     VkExtent2D extent = capabilities.currentExtent;
@@ -685,8 +756,11 @@ void Renderer::createGraphicsPipeline() {
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
+    rasterizer.depthBiasConstantFactor = 0.0f;
+    rasterizer.depthBiasClamp = 0.0f;
+    rasterizer.depthBiasSlopeFactor = 0.0f;
 
     // Multisampling
     VkPipelineMultisampleStateCreateInfo multisampling{};
@@ -945,6 +1019,7 @@ void Renderer::calculateStatistics() {
 }
 
 void Renderer::createDescriptorPool() {
+    // Create descriptor pool for ImGui
     VkDescriptorPoolSize pool_sizes[] = {
         { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
@@ -967,6 +1042,6 @@ void Renderer::createDescriptorPool() {
     pool_info.pPoolSizes = pool_sizes;
 
     if (vkCreateDescriptorPool(device, &pool_info, nullptr, &descriptorPool) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create descriptor pool for ImGui");
+        throw std::runtime_error("Failed to create descriptor pool for ImGui!");
     }
 }

@@ -13,9 +13,9 @@
 #include <glm/gtx/transform.hpp>
 #include "World.h"
 #include <chrono>
-#include <imgui.h>
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_vulkan.h>
+#include "imgui.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_vulkan.h"
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -77,7 +77,7 @@ public:
     Renderer();
     ~Renderer();
 
-    void init(VkInstance instance, VkSurfaceKHR surface);
+    void init(VkInstance instance, VkSurfaceKHR surface, GLFWwindow* window);
     void draw();
     void cleanup();
     
@@ -102,6 +102,7 @@ private:
     // Vulkan objects
     VkInstance instance;
     VkSurfaceKHR surface;
+    GLFWwindow* window;
     VkPhysicalDevice physicalDevice;
     VkDevice device;
     VkQueue graphicsQueue;
