@@ -1,4 +1,5 @@
 #include "Renderer.h"
+#include "Engine.h"
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
@@ -122,7 +123,7 @@ void Renderer::init(VkInstance vulkanInstance, VkSurfaceKHR vulkanSurface, GLFWw
         }
         
         std::cout << "ImGui initialization complete." << std::endl;
-
+        
         std::cout << "Renderer initialization complete." << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Error during renderer initialization: " << e.what() << std::endl;
@@ -146,13 +147,9 @@ void Renderer::cleanup() {
 
             // Cleanup ImGui
             std::cout << "Cleaning up ImGui..." << std::endl;
-            try {
-                ImGui_ImplVulkan_Shutdown();
-                ImGui_ImplGlfw_Shutdown();
-                ImGui::DestroyContext();
-            } catch (const std::exception& e) {
-                std::cerr << "Error during ImGui cleanup: " << e.what() << std::endl;
-            }
+            ImGui_ImplVulkan_Shutdown();
+            ImGui_ImplGlfw_Shutdown();
+            ImGui::DestroyContext();
             
             if (vertexBuffer != VK_NULL_HANDLE) {
                 std::cout << "Cleaning up vertex buffer..." << std::endl;
@@ -162,13 +159,15 @@ void Renderer::cleanup() {
             
             std::cout << "Cleaning up descriptor pool..." << std::endl;
             if (descriptorPool != VK_NULL_HANDLE) {
-                vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+            vkDestroyDescriptorPool(device, descriptorPool, nullptr);
             }
             
             std::cout << "Cleaning up sync objects..." << std::endl;
-            vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-            vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
-            vkDestroyFence(device, inFlightFence, nullptr);
+            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+                vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+                vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+                vkDestroyFence(device, inFlightFences[i], nullptr);
+            }
             
             std::cout << "Cleaning up command pool..." << std::endl;
             vkDestroyCommandPool(device, commandPool, nullptr);
@@ -205,13 +204,10 @@ void Renderer::cleanup() {
 
 void Renderer::draw() {
     try {
-        updatePerformanceMetrics();
-        calculateStatistics();
-
-        vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+        vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
         uint32_t imageIndex;
-        VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+        VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             return;
@@ -219,36 +215,152 @@ void Renderer::draw() {
             throw std::runtime_error("Failed to acquire swap chain image!");
         }
 
-        vkResetFences(device, 1, &inFlightFence);
+        vkResetFences(device, 1, &inFlightFences[currentFrame]);
         vkResetCommandBuffer(commandBuffers[imageIndex], 0);
         
-        try {
-            // Start ImGui Frame
-            ImGui_ImplVulkan_NewFrame();
-            ImGui_ImplGlfw_NewFrame();
-            ImGui::NewFrame();
+        // Update performance metrics
+        updatePerformanceMetrics();
+        calculateStatistics();
 
-            // Create ImGui window with debug info
-            ImGui::Begin("Debug Info", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-            ImGui::Text("FPS: %.1f", getFPS());
-            ImGui::Text("Total Faces: %d", getTotalFaces());
-            ImGui::Text("Culled Faces: %d", getCulledFaces());
-            ImGui::Text("Total Voxels: %d", getTotalVoxels());
-            ImGui::End();
+        // Start ImGui frame
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
 
-            // Render ImGui
-            ImGui::Render();
-        } catch (const std::exception& e) {
-            std::cerr << "Error during ImGui frame: " << e.what() << std::endl;
-            throw;
-        }
+        // Create ImGui window for performance metrics
+        ImGui::Begin("Performance Metrics", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         
-        recordCommandBuffer(commandBuffers[imageIndex], imageIndex);
+        // Current FPS/UPS
+        ImGui::Text("Current FPS: %.1f", engine->getFPS());
+        ImGui::Text("Current UPS: %.1f", engine->getUPS());
+        ImGui::Separator();
+
+        // Performance Statistics
+        if (ImGui::CollapsingHeader("Performance Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("FPS - Min: %.1f, Max: %.1f, Avg: %.1f", metrics.minFPS, metrics.maxFPS, metrics.avgFPS);
+            ImGui::Text("UPS - Min: %.1f, Max: %.1f, Avg: %.1f", metrics.minUPS, metrics.maxUPS, metrics.avgUPS);
+            
+            // 1-minute graphs
+            if (metrics.fpsHistory1Min.size() > 1) {
+                std::vector<float> fpsData(metrics.fpsHistory1Min.begin(), metrics.fpsHistory1Min.end());
+                ImGui::PlotLines("FPS (1 min)", fpsData.data(), static_cast<int>(fpsData.size()), 
+                    0, nullptr, 0.0f, metrics.maxFPS > 0.0f ? metrics.maxFPS : 100.0f, ImVec2(300, 80));
+            }
+            if (metrics.upsHistory1Min.size() > 1) {
+                std::vector<float> upsData(metrics.upsHistory1Min.begin(), metrics.upsHistory1Min.end());
+                ImGui::PlotLines("UPS (1 min)", upsData.data(), static_cast<int>(upsData.size()), 
+                    0, nullptr, 0.0f, metrics.maxUPS > 0.0f ? metrics.maxUPS : 100.0f, ImVec2(300, 80));
+            }
+            
+            // 5-minute graphs
+            if (metrics.fpsHistory5Min.size() > 1) {
+                std::vector<float> fpsData(metrics.fpsHistory5Min.begin(), metrics.fpsHistory5Min.end());
+                ImGui::PlotLines("FPS (5 min)", fpsData.data(), static_cast<int>(fpsData.size()), 
+                    0, nullptr, 0.0f, metrics.maxFPS > 0.0f ? metrics.maxFPS : 100.0f, ImVec2(300, 80));
+            }
+            if (metrics.upsHistory5Min.size() > 1) {
+                std::vector<float> upsData(metrics.upsHistory5Min.begin(), metrics.upsHistory5Min.end());
+                ImGui::PlotLines("UPS (5 min)", upsData.data(), static_cast<int>(upsData.size()), 
+                    0, nullptr, 0.0f, metrics.maxUPS > 0.0f ? metrics.maxUPS : 100.0f, ImVec2(300, 80));
+            }
+        }
+
+        // World Statistics
+        if (ImGui::CollapsingHeader("World Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("Total Voxels: %d", totalVoxels);
+            ImGui::Text("Total Faces: %d", totalFaces);
+            ImGui::Text("Rendered Vertices: %zu", vertices.size());
+            float vertexMemoryMB = (vertices.size() * sizeof(Vertex)) / (1024.0f * 1024.0f);
+            ImGui::Text("Vertex Memory: %.2f MB", vertexMemoryMB);
+        }
+
+        ImGui::End();
+
+        // Render ImGui
+        ImGui::Render();
+        ImDrawData* draw_data = ImGui::GetDrawData();
+
+        // Begin command buffer recording
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+        if (vkBeginCommandBuffer(commandBuffers[imageIndex], &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to begin recording command buffer!");
+        }
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.renderArea.extent = swapChainExtent;
+
+        std::array<VkClearValue, 2> clearValues{};
+        clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        clearValues[1].depthStencil = {1.0f, 0};
+
+        renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+        renderPassInfo.pClearValues = clearValues.data();
+
+        vkCmdBeginRenderPass(commandBuffers[imageIndex], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        // Draw scene
+        if (vertexBuffer != VK_NULL_HANDLE && !vertices.empty()) {
+            vkCmdBindPipeline(commandBuffers[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+            // Set up matrices and lighting
+            static float angle = 0.0f;
+            angle += 0.005f;  // Camera rotation speed
+
+            glm::mat4 model = glm::mat4(1.0f);  // No model transformation for now
+            glm::mat4 view = glm::lookAt(
+                glm::vec3(std::cos(angle) * 50.0f, 35.0f, std::sin(angle) * 50.0f),  // Camera circles around
+                glm::vec3(0.0f, 15.0f, 0.0f),  // Look at center of the scene
+                glm::vec3(0.0f, 1.0f, 0.0f)   // Up vector
+            );
+            glm::mat4 proj = glm::perspective(glm::radians(45.0f), 
+                static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
+                0.1f, 200.0f);  // Increased far plane for better view
+            
+            // Vulkan's Y coordinate is inverted compared to OpenGL
+            proj[1][1] *= -1;
+
+            // Calculate light direction
+            glm::vec3 lightDir = glm::normalize(glm::vec3(
+                std::cos(angle * 0.25f) * 0.5f,
+                -1.0f,  // Stronger downward light
+                std::sin(angle * 0.25f) * 0.5f
+            ));
+
+            // Set up push constants
+            PushConstants pushConstants{};
+            pushConstants.mvp = proj * view * model;
+            pushConstants.model = model;
+            pushConstants.lightDir = lightDir;
+            pushConstants.padding = 0.0f;
+
+            vkCmdPushConstants(commandBuffers[imageIndex], pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                0, sizeof(PushConstants), &pushConstants);
+
+            VkBuffer vertexBuffers[] = {vertexBuffer};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(commandBuffers[imageIndex], 0, 1, vertexBuffers, offsets);
+            vkCmdDraw(commandBuffers[imageIndex], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+        }
+
+        // Record ImGui draw commands
+        ImGui_ImplVulkan_RenderDrawData(draw_data, commandBuffers[imageIndex]);
+
+        vkCmdEndRenderPass(commandBuffers[imageIndex]);
+
+        if (vkEndCommandBuffer(commandBuffers[imageIndex]) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to record command buffer!");
+        }
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-        VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
+        VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         submitInfo.waitSemaphoreCount = 1;
         submitInfo.pWaitSemaphores = waitSemaphores;
@@ -256,11 +368,11 @@ void Renderer::draw() {
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
 
-        VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+        VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
-        if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS) {
+        if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
             throw std::runtime_error("Failed to submit draw command buffer!");
         }
 
@@ -281,6 +393,8 @@ void Renderer::draw() {
         } else if (result != VK_SUCCESS) {
             throw std::runtime_error("Failed to present swap chain image!");
         }
+
+        currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     } catch (const std::exception& e) {
         std::cerr << "Error during frame rendering: " << e.what() << std::endl;
         throw;
@@ -314,41 +428,41 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
 
         // Draw scene
         if (vertexBuffer != VK_NULL_HANDLE && !vertices.empty()) {
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-            // Set up matrices and lighting
-            static float angle = 0.0f;
+        // Set up matrices and lighting
+        static float angle = 0.0f;
             angle += 0.005f;  // Camera rotation speed
 
-            glm::mat4 model = glm::mat4(1.0f);  // No model transformation for now
-            glm::mat4 view = glm::lookAt(
-                glm::vec3(std::cos(angle) * 50.0f, 35.0f, std::sin(angle) * 50.0f),  // Camera circles around
-                glm::vec3(0.0f, 15.0f, 0.0f),  // Look at center of the scene
-                glm::vec3(0.0f, 1.0f, 0.0f)   // Up vector
-            );
-            glm::mat4 proj = glm::perspective(glm::radians(45.0f), 
-                static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
-                0.1f, 200.0f);  // Increased far plane for better view
+        glm::mat4 model = glm::mat4(1.0f);  // No model transformation for now
+        glm::mat4 view = glm::lookAt(
+            glm::vec3(std::cos(angle) * 50.0f, 35.0f, std::sin(angle) * 50.0f),  // Camera circles around
+            glm::vec3(0.0f, 15.0f, 0.0f),  // Look at center of the scene
+            glm::vec3(0.0f, 1.0f, 0.0f)   // Up vector
+        );
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), 
+            static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
+            0.1f, 200.0f);  // Increased far plane for better view
             
-            // Vulkan's Y coordinate is inverted compared to OpenGL
-            proj[1][1] *= -1;
+        // Vulkan's Y coordinate is inverted compared to OpenGL
+        proj[1][1] *= -1;
 
-            // Calculate light direction
-            glm::vec3 lightDir = glm::normalize(glm::vec3(
-                std::cos(angle * 0.25f) * 0.5f,
-                -1.0f,  // Stronger downward light
-                std::sin(angle * 0.25f) * 0.5f
-            ));
+        // Calculate light direction
+        glm::vec3 lightDir = glm::normalize(glm::vec3(
+            std::cos(angle * 0.25f) * 0.5f,
+            -1.0f,  // Stronger downward light
+            std::sin(angle * 0.25f) * 0.5f
+        ));
 
-            // Set up push constants
-            PushConstants pushConstants{};
-            pushConstants.mvp = proj * view * model;
-            pushConstants.model = model;
-            pushConstants.lightDir = lightDir;
-            pushConstants.padding = 0.0f;
+        // Set up push constants
+        PushConstants pushConstants{};
+        pushConstants.mvp = proj * view * model;
+        pushConstants.model = model;
+        pushConstants.lightDir = lightDir;
+        pushConstants.padding = 0.0f;
 
-            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                0, sizeof(PushConstants), &pushConstants);
+        vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0, sizeof(PushConstants), &pushConstants);
 
             VkBuffer vertexBuffers[] = {vertexBuffer};
             VkDeviceSize offsets[] = {0};
@@ -568,12 +682,30 @@ void Renderer::createSwapChain() {
     std::vector<VkPresentModeKHR> presentModes(presentModeCount);
     vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, presentModes.data());
 
-    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;  // Fallback to VSync
+    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;  // Default to FIFO (vsync)
+    
+    // First try to find immediate mode
     for (const auto& mode : presentModes) {
-        if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) {  // No VSync, uncapped FPS
-            presentMode = mode;
+        if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+            presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+            std::cout << "Using IMMEDIATE present mode for uncapped FPS" << std::endl;
             break;
         }
+    }
+    
+    // If immediate not found, try mailbox as fallback
+    if (presentMode == VK_PRESENT_MODE_FIFO_KHR) {
+        for (const auto& mode : presentModes) {
+            if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
+                presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+                std::cout << "Using MAILBOX present mode for uncapped FPS" << std::endl;
+                break;
+            }
+        }
+    }
+
+    if (presentMode == VK_PRESENT_MODE_FIFO_KHR) {
+        std::cout << "Using FIFO present mode (VSync enabled)" << std::endl;
     }
 
     // Choose swap extent
@@ -1017,6 +1149,10 @@ void Renderer::createCommandBuffers() {
 }
 
 void Renderer::createSyncObjects() {
+    imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -1024,10 +1160,12 @@ void Renderer::createSyncObjects() {
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS ||
-        vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS ||
-        vkCreateFence(device, &fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create synchronization objects!");
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+            vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create synchronization objects for a frame!");
+        }
     }
 }
 
@@ -1110,9 +1248,16 @@ void Renderer::updatePerformanceMetrics() {
     auto currentTime = std::chrono::steady_clock::now();
     float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
     
-    // Update FPS every 0.5 seconds
-    if (deltaTime >= 0.5f) {
-        fps = frameCount / deltaTime;
+    // Update FPS every 1 second
+    if (deltaTime >= 1.0f) {
+        float currentFPS = frameCount / deltaTime;
+        float currentUPS = engine->getUPS();  // Get UPS from engine
+        
+        // Update metrics
+        metrics.updateFPS(currentFPS);
+        metrics.updateUPS(currentUPS);
+        
+        // Reset frame counter
         frameCount = 0;
         lastFrameTime = currentTime;
     }

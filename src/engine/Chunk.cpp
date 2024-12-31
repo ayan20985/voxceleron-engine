@@ -28,7 +28,6 @@ void Chunk::setVoxel(int x, int y, int z, const Voxel& voxel) {
         voxels[getIndex(x, y, z)] = voxel;
     }
 }
-
 bool Chunk::shouldRenderFace(int x, int y, int z, int dx, int dy, int dz) const {
     // Check if the adjacent voxel is out of bounds or is air/inactive
     int nx = x + dx;

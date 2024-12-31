@@ -1,0 +1,13 @@
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/CMakeFiles/imgui.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/CMakeFiles/shaders.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/CMakeFiles/voxceron.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/CMakeFiles/INSTALL.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/CMakeFiles/ALL_BUILD.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/CMakeFiles/ZERO_CHECK.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/external/glfw/CMakeFiles/uninstall.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/external/glfw/CMakeFiles/INSTALL.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/external/glfw/CMakeFiles/ALL_BUILD.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/external/glfw/src/CMakeFiles/glfw.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/external/glfw/src/CMakeFiles/update_mappings.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/external/glfw/src/CMakeFiles/INSTALL.dir
+C:/Users/Ayan/Desktop/University Work/voxceron-engine/build/v2/external/glfw/docs/CMakeFiles/INSTALL.dir

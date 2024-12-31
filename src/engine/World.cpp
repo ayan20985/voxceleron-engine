@@ -121,4 +121,10 @@ void World::generateTestWorld() {
     addTree(-10, -10);
     addTree(10, -10);
     addTree(-10, 10);
+}
+
+void World::update(double deltaTime) {
+    std::lock_guard<std::mutex> lock(worldMutex);
+    // Update world state here
+    // For now, we'll just have a placeholder for world updates
 } 

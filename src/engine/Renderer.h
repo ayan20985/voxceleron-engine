@@ -6,6 +6,8 @@
 #include <vector>
 #include <string>
 #include <optional>
+#include <array>
+#include <deque>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/rotate_vector.hpp>
@@ -16,6 +18,91 @@
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
+
+// Forward declaration
+class Engine;
+
+// Performance history constants
+const size_t ONE_MINUTE_SAMPLES = 60;  // 1 sample per second for 1 minute
+const size_t FIVE_MINUTE_SAMPLES = 300;  // 1 sample per second for 5 minutes
+
+struct PerformanceMetrics {
+    std::deque<float> fpsHistory1Min;
+    std::deque<float> upsHistory1Min;
+    std::deque<float> fpsHistory5Min;
+    std::deque<float> upsHistory5Min;
+    float minFPS = std::numeric_limits<float>::max();
+    float maxFPS = 0.0f;
+    float avgFPS = 0.0f;
+    float minUPS = std::numeric_limits<float>::max();
+    float maxUPS = 0.0f;
+    float avgUPS = 0.0f;
+    uint32_t totalFaces = 0;
+    uint32_t totalVoxels = 0;
+    
+    void updateFPS(float fps) {
+        // Update 1-minute history
+        fpsHistory1Min.push_back(fps);
+        if (fpsHistory1Min.size() > ONE_MINUTE_SAMPLES) {
+            fpsHistory1Min.pop_front();
+        }
+        
+        // Update 5-minute history
+        fpsHistory5Min.push_back(fps);
+        if (fpsHistory5Min.size() > FIVE_MINUTE_SAMPLES) {
+            fpsHistory5Min.pop_front();
+        }
+        
+        // Update min/max/avg
+        minFPS = std::min(minFPS, fps);
+        maxFPS = std::max(maxFPS, fps);
+        avgFPS = 0.0f;
+        for (float f : fpsHistory1Min) {
+            avgFPS += f;
+        }
+        avgFPS /= fpsHistory1Min.size();
+    }
+    
+    void updateUPS(float ups) {
+        // Update 1-minute history
+        upsHistory1Min.push_back(ups);
+        if (upsHistory1Min.size() > ONE_MINUTE_SAMPLES) {
+            upsHistory1Min.pop_front();
+        }
+        
+        // Update 5-minute history
+        upsHistory5Min.push_back(ups);
+        if (upsHistory5Min.size() > FIVE_MINUTE_SAMPLES) {
+            upsHistory5Min.pop_front();
+        }
+        
+        // Update min/max/avg
+        minUPS = std::min(minUPS, ups);
+        maxUPS = std::max(maxUPS, ups);
+        avgUPS = 0.0f;
+        for (float u : upsHistory1Min) {
+            avgUPS += u;
+        }
+        avgUPS /= upsHistory1Min.size();
+    }
+
+    // Helper functions to convert deque to vector for plotting
+    std::vector<float> getFPSHistory1MinVector() const {
+        return std::vector<float>(fpsHistory1Min.begin(), fpsHistory1Min.end());
+    }
+
+    std::vector<float> getUPSHistory1MinVector() const {
+        return std::vector<float>(upsHistory1Min.begin(), upsHistory1Min.end());
+    }
+
+    std::vector<float> getFPSHistory5MinVector() const {
+        return std::vector<float>(fpsHistory5Min.begin(), fpsHistory5Min.end());
+    }
+
+    std::vector<float> getUPSHistory5MinVector() const {
+        return std::vector<float>(upsHistory5Min.begin(), upsHistory5Min.end());
+    }
+};
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -74,6 +161,8 @@ struct PushConstants {
 
 class Renderer {
 public:
+    static const int MAX_FRAMES_IN_FLIGHT = 2;  // Number of frames to process concurrently
+
     Renderer();
     ~Renderer();
 
@@ -84,6 +173,9 @@ public:
     // World management
     void setWorld(World* world) { this->world = world; }
     void updateWorldMesh();
+
+    // Set engine reference
+    void setEngine(Engine* eng) { engine = eng; }
 
     // Statistics getters
     float getFPS() const { return fps; }
@@ -99,6 +191,9 @@ public:
     VkRenderPass getRenderPass() const { return renderPass; }
 
 private:
+    // Engine reference
+    Engine* engine;
+
     // Vulkan objects
     VkInstance instance;
     VkSurfaceKHR surface;
@@ -170,6 +265,7 @@ private:
     uint32_t totalVoxels;
     void updatePerformanceMetrics();
     void calculateStatistics();
+    PerformanceMetrics metrics;  // New performance metrics tracking
 
     // ImGui resources
     VkDescriptorPool descriptorPool;
@@ -186,6 +282,16 @@ private:
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
         VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
+
+    // Multiple frames in flight resources
+    std::vector<VkSemaphore> imageAvailableSemaphores;
+    std::vector<VkSemaphore> renderFinishedSemaphores;
+    std::vector<VkFence> inFlightFences;
+    uint32_t currentFrame = 0;
+
+    // Pipeline cache
+    VkPipelineCache pipelineCache;
 };
 
 #endif // RENDERER_H
+

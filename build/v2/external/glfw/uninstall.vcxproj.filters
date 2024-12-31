@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Ayan\Desktop\University Work\voxceron-engine\build\v2\CMakeFiles\faf01af2af2119ffbb820fc7454efc08\uninstall.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Ayan\Desktop\University Work\voxceron-engine\external\glfw\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="C:\Users\Ayan\Desktop\University Work\voxceron-engine\build\v2\external\glfw\CMakeFiles\uninstall" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{1E79255C-44DE-31C2-AC24-E1A3871D70AB}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

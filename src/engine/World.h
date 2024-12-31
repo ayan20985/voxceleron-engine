@@ -4,6 +4,7 @@
 #include "Chunk.h"
 #include <unordered_map>
 #include <memory>
+#include <mutex>
 
 // Hash function for glm::ivec3 to use in unordered_map
 namespace std {
@@ -33,6 +34,9 @@ public:
     Voxel& getVoxel(int x, int y, int z);
     void setVoxel(int x, int y, int z, const Voxel& voxel);
     
+    // World update
+    void update(double deltaTime);
+    
     // Convert world coordinates to chunk coordinates
     static glm::ivec3 worldToChunkPos(int x, int y, int z) {
         return glm::ivec3(
@@ -58,6 +62,7 @@ public:
     
 private:
     std::unordered_map<glm::ivec3, std::unique_ptr<Chunk>> chunks;
+    std::mutex worldMutex;
 };
 
 #endif // WORLD_H 

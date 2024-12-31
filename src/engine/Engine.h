@@ -2,6 +2,10 @@
 #define ENGINE_H
 
 #include <vulkan/vulkan.h>
+#include <GLFW/glfw3.h>
+#include "World.h"
+#include "Renderer.h"
+#include <atomic>
 
 class Engine {
 public:
@@ -9,12 +13,25 @@ public:
     ~Engine();
 
     void init();
-    void run();
+    void mainLoop();
     void cleanup();
 
+    // Performance metrics getters for ImGui
+    float getFPS() const { return currentFPS; }
+    float getUPS() const { return currentUPS; }
+
 private:
+    bool isRunning;
+    GLFWwindow* window;
+    World* world;
+    Renderer* renderer;
     VkInstance instance;
-    // Other Vulkan objects (device, swapchain, etc.)
+    VkSurfaceKHR surface;
+
+    // Performance metrics
+    std::atomic<float> currentFPS{0.0f};
+    std::atomic<float> currentUPS{0.0f};
 };
 
 #endif // ENGINE_H
+
