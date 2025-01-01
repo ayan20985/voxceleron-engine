@@ -1,7 +1,7 @@
-# Build directories
 build/
 recovery/
 
-# Reference engines and external resources
 reference-engines/
 external/
+
+.vscode/
