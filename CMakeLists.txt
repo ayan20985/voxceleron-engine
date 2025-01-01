@@ -9,6 +9,7 @@ add_definitions(-DGLM_ENABLE_EXPERIMENTAL)
 
 # Find Vulkan
 find_package(Vulkan REQUIRED)
+include_directories(${Vulkan_INCLUDE_DIRS})
 
 # Add GLFW
 add_subdirectory(external/glfw)

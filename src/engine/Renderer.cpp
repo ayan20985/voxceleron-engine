@@ -217,7 +217,7 @@ void Renderer::draw() {
 
         vkResetFences(device, 1, &inFlightFences[currentFrame]);
         vkResetCommandBuffer(commandBuffers[imageIndex], 0);
-        
+
         // Update performance metrics
         updatePerformanceMetrics();
         calculateStatistics();
@@ -308,35 +308,19 @@ void Renderer::draw() {
         if (vertexBuffer != VK_NULL_HANDLE && !vertices.empty()) {
             vkCmdBindPipeline(commandBuffers[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-            // Set up matrices and lighting
-            static float angle = 0.0f;
-            angle += 0.005f;  // Camera rotation speed
-
-            glm::mat4 model = glm::mat4(1.0f);  // No model transformation for now
-            glm::mat4 view = glm::lookAt(
-                glm::vec3(std::cos(angle) * 50.0f, 35.0f, std::sin(angle) * 50.0f),  // Camera circles around
-                glm::vec3(0.0f, 15.0f, 0.0f),  // Look at center of the scene
-                glm::vec3(0.0f, 1.0f, 0.0f)   // Up vector
-            );
+            // Set up matrices
+            glm::mat4 model = glm::mat4(1.0f);
+            glm::mat4 view = camera ? camera->getViewMatrix() : glm::mat4(1.0f);
             glm::mat4 proj = glm::perspective(glm::radians(45.0f), 
                 static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
-                0.1f, 200.0f);  // Increased far plane for better view
-            
-            // Vulkan's Y coordinate is inverted compared to OpenGL
-            proj[1][1] *= -1;
+                0.1f, 1000.0f);
+            proj[1][1] *= -1;  // Flip Y coordinate for Vulkan
 
-            // Calculate light direction
-            glm::vec3 lightDir = glm::normalize(glm::vec3(
-                std::cos(angle * 0.25f) * 0.5f,
-                -1.0f,  // Stronger downward light
-                std::sin(angle * 0.25f) * 0.5f
-            ));
-
-            // Set up push constants
+            // Update push constants
             PushConstants pushConstants{};
             pushConstants.mvp = proj * view * model;
             pushConstants.model = model;
-            pushConstants.lightDir = lightDir;
+            pushConstants.lightDir = glm::normalize(glm::vec3(-0.5f, -1.0f, -0.5f));
             pushConstants.padding = 0.0f;
 
             vkCmdPushConstants(commandBuffers[imageIndex], pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -428,41 +412,27 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
 
         // Draw scene
         if (vertexBuffer != VK_NULL_HANDLE && !vertices.empty()) {
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-        // Set up matrices and lighting
-        static float angle = 0.0f;
-            angle += 0.005f;  // Camera rotation speed
+            // Set up matrices
+            glm::mat4 model = glm::mat4(1.0f);
+            glm::mat4 view = camera ? camera->getViewMatrix() : glm::mat4(1.0f);
+            glm::mat4 proj = glm::perspective(glm::radians(45.0f), 
+                static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
+                0.1f, 200.0f);
+                
+            // Vulkan's Y coordinate is inverted compared to OpenGL
+            proj[1][1] *= -1;
 
-        glm::mat4 model = glm::mat4(1.0f);  // No model transformation for now
-        glm::mat4 view = glm::lookAt(
-            glm::vec3(std::cos(angle) * 50.0f, 35.0f, std::sin(angle) * 50.0f),  // Camera circles around
-            glm::vec3(0.0f, 15.0f, 0.0f),  // Look at center of the scene
-            glm::vec3(0.0f, 1.0f, 0.0f)   // Up vector
-        );
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), 
-            static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
-            0.1f, 200.0f);  // Increased far plane for better view
-            
-        // Vulkan's Y coordinate is inverted compared to OpenGL
-        proj[1][1] *= -1;
+            // Set up push constants
+            PushConstants pushConstants{};
+            pushConstants.mvp = proj * view * model;
+            pushConstants.model = model;
+            pushConstants.lightDir = glm::normalize(glm::vec3(-0.5f, -1.0f, -0.5f));
+            pushConstants.padding = 0.0f;
 
-        // Calculate light direction
-        glm::vec3 lightDir = glm::normalize(glm::vec3(
-            std::cos(angle * 0.25f) * 0.5f,
-            -1.0f,  // Stronger downward light
-            std::sin(angle * 0.25f) * 0.5f
-        ));
-
-        // Set up push constants
-        PushConstants pushConstants{};
-        pushConstants.mvp = proj * view * model;
-        pushConstants.model = model;
-        pushConstants.lightDir = lightDir;
-        pushConstants.padding = 0.0f;
-
-        vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            0, sizeof(PushConstants), &pushConstants);
+            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                0, sizeof(PushConstants), &pushConstants);
 
             VkBuffer vertexBuffers[] = {vertexBuffer};
             VkDeviceSize offsets[] = {0};

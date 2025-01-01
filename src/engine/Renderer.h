@@ -18,6 +18,7 @@
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
+#include "Camera.h"
 
 // Forward declaration
 class Engine;
@@ -177,6 +178,11 @@ public:
     // Set engine reference
     void setEngine(Engine* eng) { engine = eng; }
 
+    // Camera management
+    void initCamera() { camera = std::make_unique<Camera>(window); }
+    void updateCamera(float deltaTime) { if (camera) camera->update(deltaTime); }
+    void handleMouseMovement(float xoffset, float yoffset) { if (camera) camera->handleMouseMovement(xoffset, yoffset); }
+
     // Statistics getters
     float getFPS() const { return fps; }
     uint32_t getTotalFaces() const { return totalFaces; }
@@ -291,6 +297,8 @@ private:
 
     // Pipeline cache
     VkPipelineCache pipelineCache;
+
+    std::unique_ptr<Camera> camera;
 };
 
 #endif // RENDERER_H
