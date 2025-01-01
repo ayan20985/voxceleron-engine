@@ -1,63 +1,7 @@
 # Build directories
 build/
-Debug/
-Release/
-x64/
-Win32/
-
-# CMake
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-*.cmake
-!CMakeLists.txt
-
-# Compiled shaders
-*.spv
-
-# Visual Studio
-.vs/
-*.sln
-*.vcxproj
-*.vcxproj.filters
-*.vcxproj.user
-*.pdb
-*.ilk
-*.obj
-*.idb
-
-# C++ compiled
-*.exe
-*.dll
-*.lib
-*.a
-*.o
-*.so
-
-# ImGui generated
-imgui.ini
+recovery/
 
 # Reference engines and external resources
-reference_engines/
+reference-engines/
 external/
-third_party/
-
-# IDE specific
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS specific
-.DS_Store
-Thumbs.db
-
-# Logs and temporary files
-*.log
-*.tmp
-temp/
-logs/
-
-# Project specific
-voxceron.exe
-imgui.lib 
