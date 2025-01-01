@@ -6,6 +6,7 @@
 #include "World.h"
 #include "Renderer.h"
 #include <atomic>
+#include <memory>
 
 class Engine {
 public:
@@ -16,26 +17,26 @@ public:
     void mainLoop();
     void cleanup();
 
-    // Mouse input handling
+    // Mouse callback
     static void mouseCallback(GLFWwindow* window, double xpos, double ypos);
 
     // Performance metrics getters for ImGui
-    float getFPS() const { return currentFPS.load(); }
-    float getUPS() const { return currentUPS.load(); }
+    float getFPS() const { return currentFPS; }
+    float getUPS() const { return currentUPS; }
 
 private:
     bool isRunning;
     GLFWwindow* window;
-    World* world;
+    std::unique_ptr<World> world;
     Renderer* renderer;
     VkInstance instance;
     VkSurfaceKHR surface;
 
-    // Mouse input state
-    bool firstMouse;
-    float lastX;
-    float lastY;
-    bool altWasPressed = false;  // Track Alt key state
+    // Mouse handling
+    bool firstMouse = true;
+    bool altWasPressed = false;
+    float lastX = 0.0f;
+    float lastY = 0.0f;
 
     // Performance metrics
     std::atomic<float> currentFPS{0.0f};

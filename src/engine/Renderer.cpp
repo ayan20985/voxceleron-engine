@@ -1,3 +1,8 @@
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
+
 #include "Renderer.h"
 #include "Engine.h"
 #include <iostream>
@@ -17,6 +22,7 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/scalar_constants.hpp>
+#include <mutex>
 
 Renderer::Renderer() : instance(VK_NULL_HANDLE), device(VK_NULL_HANDLE) {}
 
@@ -228,11 +234,24 @@ void Renderer::draw() {
         ImGui::NewFrame();
 
         // Create ImGui window for performance metrics
-        ImGui::Begin("Performance Metrics", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::Begin("Debug", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         
         // Current FPS/UPS
         ImGui::Text("Current FPS: %.1f", engine->getFPS());
         ImGui::Text("Current UPS: %.1f", engine->getUPS());
+        ImGui::Separator();
+
+        // Camera Information
+        if (camera) {
+            glm::vec3 pos = camera->getPosition();
+            glm::vec3 front = camera->getFront();
+            float yaw = glm::degrees(atan2(front.z, front.x));
+            float pitch = glm::degrees(asin(front.y));
+            
+            ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)", pos.x, pos.y, pos.z);
+            ImGui::Text("Camera Direction: (%.2f, %.2f, %.2f)", front.x, front.y, front.z);
+            ImGui::Text("Yaw: %.1f°, Pitch: %.1f°", yaw, pitch);
+        }
         ImGui::Separator();
 
         // Performance Statistics
@@ -1140,9 +1159,20 @@ void Renderer::createSyncObjects() {
 }
 
 void Renderer::createVertexBuffer() {
+    VkDeviceSize bufferSize = sizeof(Vertex) * vertices.size();
+    
+    // If we already have a vertex buffer, clean it up first
+    if (vertexBuffer != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(device);
+        vkDestroyBuffer(device, vertexBuffer, nullptr);
+        vkFreeMemory(device, vertexBufferMemory, nullptr);
+        vertexBuffer = VK_NULL_HANDLE;
+        vertexBufferMemory = VK_NULL_HANDLE;
+    }
+
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = sizeof(Vertex) * vertices.size();
+    bufferInfo.size = bufferSize;
     bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -1167,9 +1197,24 @@ void Renderer::createVertexBuffer() {
 }
 
 void Renderer::updateVertexBuffer() {
+    VkDeviceSize bufferSize = sizeof(Vertex) * vertices.size();
+    
+    // Map the memory
     void* data;
-    vkMapMemory(device, vertexBufferMemory, 0, sizeof(Vertex) * vertices.size(), 0, &data);
-    memcpy(data, vertices.data(), sizeof(Vertex) * vertices.size());
+    vkMapMemory(device, vertexBufferMemory, 0, bufferSize, 0, &data);
+    
+    // Copy the vertex data
+    memcpy(data, vertices.data(), bufferSize);
+    
+    // Add a memory barrier to ensure the data is visible to the GPU
+    VkMappedMemoryRange memoryRange{};
+    memoryRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    memoryRange.memory = vertexBufferMemory;
+    memoryRange.offset = 0;
+    memoryRange.size = bufferSize;
+    vkFlushMappedMemoryRanges(device, 1, &memoryRange);
+    
+    // Unmap the memory
     vkUnmapMemory(device, vertexBufferMemory);
 }
 
@@ -1190,26 +1235,83 @@ uint32_t Renderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags pro
 void Renderer::updateWorldMesh() {
     if (!world) return;
 
-    vertices.clear();
-
-    // Convert chunk vertex data to renderer vertices
-    for (const auto& chunk : world->getChunks()) {
-        const std::vector<float>& chunkData = chunk.second->getVertexData();
-        for (size_t i = 0; i < chunkData.size(); i += 9) {  // 9 floats per vertex (pos + color + normal)
-            Vertex vertex{};
-            vertex.pos = glm::vec3(chunkData[i], chunkData[i + 1], chunkData[i + 2]);
-            vertex.color = glm::vec3(chunkData[i + 3], chunkData[i + 4], chunkData[i + 5]);
-            vertex.normal = glm::vec3(chunkData[i + 6], chunkData[i + 7], chunkData[i + 8]);
-            vertices.push_back(vertex);
+    static std::ofstream logFile("logs/world_generation.log", std::ios::app);
+    logFile << "Starting world mesh update..." << std::endl;
+    
+    std::lock_guard<std::mutex> lock(meshUpdateMutex);
+    
+    try {
+        // Clear the vertex buffer first
+        vertices.clear();
+        vertices.shrink_to_fit(); // Release memory back to the system
+        
+        // Get visible chunks based on camera position
+        glm::vec3 cameraPos = camera ? camera->getPosition() : glm::vec3(0.0f);
+        const float renderDistance = 200.0f; // Adjust this value as needed
+        
+        size_t totalVertices = 0;
+        
+        // Convert chunk vertex data to renderer vertices
+        for (const auto& chunk : world->getChunks()) {
+            // Skip chunks that are too far away
+            glm::vec3 chunkPos = glm::vec3(
+                chunk.first.x * Chunk::CHUNK_SIZE,
+                chunk.first.y * Chunk::CHUNK_SIZE,
+                chunk.first.z * Chunk::CHUNK_SIZE
+            );
+            float distance = glm::length(chunkPos - cameraPos);
+            if (distance > renderDistance) continue;
+            
+            const std::vector<float>& chunkData = chunk.second->getVertexData();
+            size_t vertexCount = chunkData.size() / 9;  // 9 floats per vertex
+            logFile << "Processing chunk at " << chunk.first.x << ", " << chunk.first.y << ", " << chunk.first.z 
+                   << " with " << vertexCount << " vertices" << std::endl;
+            
+            try {
+                // Reserve space for the vertices to avoid reallocations
+                vertices.reserve(vertices.size() + vertexCount);
+                
+                for (size_t i = 0; i < chunkData.size(); i += 9) {
+                    Vertex vertex{};
+                    vertex.pos = glm::vec3(chunkData[i], chunkData[i + 1], chunkData[i + 2]);
+                    vertex.color = glm::vec3(chunkData[i + 3], chunkData[i + 4], chunkData[i + 5]);
+                    vertex.normal = glm::vec3(chunkData[i + 6], chunkData[i + 7], chunkData[i + 8]);
+                    vertices.push_back(vertex);
+                    totalVertices++;
+                }
+            } catch (const std::exception& e) {
+                logFile << "Error processing chunk vertices: " << e.what() << std::endl;
+                throw;
+            }
         }
-    }
 
-    // Update GPU buffer
-    if (!vertices.empty()) {
-        if (vertexBuffer == VK_NULL_HANDLE) {
+        logFile << "Total vertices collected: " << totalVertices << std::endl;
+
+        // Update GPU buffer
+        if (!vertices.empty()) {
+            // Always recreate the buffer to ensure proper memory management
+            logFile << "Creating new vertex buffer for " << vertices.size() << " vertices..." << std::endl;
             createVertexBuffer();
+            logFile << "Updating vertex buffer with " << vertices.size() << " vertices..." << std::endl;
+            updateVertexBuffer();
+        } else {
+            // Clean up the buffer if we have no vertices
+            if (vertexBuffer != VK_NULL_HANDLE) {
+                vkDeviceWaitIdle(device);
+                vkDestroyBuffer(device, vertexBuffer, nullptr);
+                vkFreeMemory(device, vertexBufferMemory, nullptr);
+                vertexBuffer = VK_NULL_HANDLE;
+                vertexBufferMemory = VK_NULL_HANDLE;
+            }
         }
-        updateVertexBuffer();
+        
+        logFile << "World mesh update completed successfully" << std::endl;
+        logFile.flush();
+        
+    } catch (const std::exception& e) {
+        logFile << "Fatal error in updateWorldMesh: " << e.what() << std::endl;
+        logFile.flush();
+        throw;
     }
 }
 

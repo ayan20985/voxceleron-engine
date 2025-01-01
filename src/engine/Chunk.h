@@ -6,11 +6,13 @@
 #include <vector>
 #include <glm/glm.hpp>
 
+class World;  // Forward declaration
+
 class Chunk {
 public:
     static constexpr int CHUNK_SIZE = 16;  // 16x16x16 voxels per chunk
     
-    Chunk(const glm::ivec3& position = glm::ivec3(0));
+    Chunk(World* world, const glm::ivec3& position = glm::ivec3(0));
     
     // Voxel access
     Voxel& getVoxel(int x, int y, int z);
@@ -29,9 +31,11 @@ public:
     
     // Generate mesh data for rendering
     void generateMesh();
+    void clearMesh();
     const std::vector<float>& getVertexData() const { return vertexData; }
     
 private:
+    World* world;  // Pointer to the world this chunk belongs to
     glm::ivec3 position;  // Chunk position in world space
     std::array<Voxel, CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE> voxels;
     std::vector<float> vertexData;  // Vertex data for rendering
@@ -41,8 +45,11 @@ private:
         return x + CHUNK_SIZE * (y + CHUNK_SIZE * z);
     }
     
-    // Check if a voxel face should be rendered (true if adjacent voxel is air or inactive)
+    // Check if a voxel face should be rendered
     bool shouldRenderFace(int x, int y, int z, int dx, int dy, int dz) const;
+    
+    // Get voxel from world coordinates (including neighboring chunks)
+    const Voxel& getWorldVoxel(int wx, int wy, int wz) const;
 };
 
 #endif // CHUNK_H 

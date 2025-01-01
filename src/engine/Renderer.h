@@ -19,6 +19,7 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
 #include "Camera.h"
+#include <mutex>
 
 // Forward declaration
 class Engine;
@@ -40,6 +41,33 @@ struct PerformanceMetrics {
     float avgUPS = 0.0f;
     uint32_t totalFaces = 0;
     uint32_t totalVoxels = 0;
+    
+    // Memory usage metrics
+    size_t ramUsageMB = 0;
+    size_t vramUsageMB = 0;
+    std::deque<size_t> ramHistory1Min;
+    std::deque<size_t> vramHistory1Min;
+    size_t peakRAM = 0;
+    size_t peakVRAM = 0;
+    
+    void updateMemoryUsage(size_t ram, size_t vram) {
+        ramUsageMB = ram;
+        vramUsageMB = vram;
+        
+        // Update history
+        ramHistory1Min.push_back(ram);
+        vramHistory1Min.push_back(vram);
+        if (ramHistory1Min.size() > ONE_MINUTE_SAMPLES) {
+            ramHistory1Min.pop_front();
+        }
+        if (vramHistory1Min.size() > ONE_MINUTE_SAMPLES) {
+            vramHistory1Min.pop_front();
+        }
+        
+        // Update peaks
+        peakRAM = std::max(peakRAM, ram);
+        peakVRAM = std::max(peakVRAM, vram);
+    }
     
     void updateFPS(float fps) {
         // Update 1-minute history
@@ -196,6 +224,9 @@ public:
     VkDescriptorPool getDescriptorPool() const { return descriptorPool; }
     VkRenderPass getRenderPass() const { return renderPass; }
 
+    // Camera access
+    Camera* getCamera() const { return camera.get(); }
+
 private:
     // Engine reference
     Engine* engine;
@@ -231,6 +262,9 @@ private:
     // World reference
     World* world;
 
+    // Camera
+    std::unique_ptr<Camera> camera;
+
     // Depth buffer resources
     VkImage depthImage;
     VkDeviceMemory depthImageMemory;
@@ -251,6 +285,7 @@ private:
     void createVertexBuffer();
     void updateVertexBuffer();
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+    void createDescriptorPool();
     
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
     bool isDeviceSuitable(VkPhysicalDevice device);
@@ -275,7 +310,6 @@ private:
 
     // ImGui resources
     VkDescriptorPool descriptorPool;
-    void createDescriptorPool();
 
     // Command buffer helpers
     VkCommandBuffer beginSingleTimeCommands();
@@ -298,7 +332,7 @@ private:
     // Pipeline cache
     VkPipelineCache pipelineCache;
 
-    std::unique_ptr<Camera> camera;
+    std::mutex meshUpdateMutex;  // Mutex for synchronizing mesh updates
 };
 
 #endif // RENDERER_H

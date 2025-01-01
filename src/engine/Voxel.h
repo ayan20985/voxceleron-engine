@@ -9,7 +9,8 @@ enum class VoxelType {
     GRASS,
     STONE,
     WOOD,
-    LEAVES
+    LEAVES,
+    WATER
 };
 
 struct Voxel {
@@ -33,6 +34,8 @@ struct Voxel {
                 return glm::vec3(0.6f, 0.4f, 0.2f);
             case VoxelType::LEAVES:
                 return glm::vec3(0.0f, 0.6f, 0.0f);
+            case VoxelType::WATER:
+                return glm::vec3(0.0f, 0.4f, 1.0f);
             default:
                 return glm::vec3(1.0f);
         }
