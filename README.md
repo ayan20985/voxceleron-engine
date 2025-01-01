@@ -290,14 +290,6 @@ cmake --build .
    - ImGui is included as a submodule
    - Ensure submodules are initialized
 
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines and code of conduct before submitting pull requests.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
 ## Acknowledgments
 
 - Vulkan SDK and documentation
