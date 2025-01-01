@@ -1,7 +1,5 @@
-build/
-recovery/
-
-reference-engines/
-external/
-
 .vscode/
+build/
+external/
+recovery/
+reference-engines/
