@@ -59,13 +59,15 @@ private:
     void createLogDirectoryIfNeeded();
     void openLogFile();
     void initStartupTimestamp();
+    std::string formatLogMessage(LogLevel level, const std::string& message);
 
     std::string logDirectory;
     std::string startupTimestamp;
     std::unique_ptr<std::ofstream> logFile;
+    bool logToConsole;
+    size_t maxLogSize;
+    int currentPart;  // Track current log file part number
     std::unordered_map<LogLevel, bool> enabledLevels;
-    bool logToConsole = true;
-    size_t maxLogSize = 10 * 1024 * 1024; // 10MB default
     mutable std::mutex logMutex;
 };
 

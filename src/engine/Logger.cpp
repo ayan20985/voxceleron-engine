@@ -8,7 +8,8 @@
 Logger::Logger() : 
     logDirectory("logs"),
     logToConsole(false),
-    maxLogSize(10 * 1024 * 1024)  // 10MB default max size
+    maxLogSize(1 * 1024 * 1024),  // 1MB max size per file
+    currentPart(1)
 {
     // Enable all log levels by default
     for (int level = static_cast<int>(LogLevel::INFO); 
@@ -31,23 +32,21 @@ Logger& Logger::getInstance() {
 }
 
 void Logger::log(LogLevel level, const std::string& message) {
-    if (!enabledLevels[level]) return;
-
     std::lock_guard<std::mutex> lock(logMutex);
     
-    // Create the log entry with timestamp
-    std::stringstream entry;
-    entry << "[" << getTimestamp() << "] "
-          << "[" << getLevelString(level) << "] "
-          << message << "\n";
+    if (!enabledLevels[level]) return;
 
-    // Write to file
+    std::string formattedMessage = formatLogMessage(level, message);
+    
     if (logFile && logFile->is_open()) {
-        *logFile << entry.str();
+        *logFile << formattedMessage << std::endl;
         logFile->flush();
+        rotateLogFileIfNeeded();
     }
-
-    rotateLogFileIfNeeded();
+    
+    if (logToConsole) {
+        std::cout << formattedMessage << std::endl;
+    }
 }
 
 void Logger::logf(LogLevel level, const char* format, ...) {
@@ -119,8 +118,16 @@ void Logger::createLogDirectoryIfNeeded() {
 }
 
 void Logger::openLogFile() {
-    std::string filename = logDirectory + "/engine_" + startupTimestamp + ".log";
+    std::string filename = logDirectory + "/engine_" + startupTimestamp;
+    if (currentPart > 1) {
+        filename += "_part" + std::to_string(currentPart);
+    }
+    filename += ".log";
     logFile = std::make_unique<std::ofstream>(filename, std::ios::app);
+    
+    if (logFile && logFile->is_open()) {
+        *logFile << "=== Log file part " << currentPart << " ===\n";
+    }
 }
 
 void Logger::rotateLogFileIfNeeded() {
@@ -131,13 +138,17 @@ void Logger::rotateLogFileIfNeeded() {
     if (pos > maxLogSize) {
         // Close current file
         logFile->close();
-
-        // Generate new filename with current timestamp
-        std::string currentFilename = logDirectory + "/engine_" + startupTimestamp + ".log";
-        std::string newFilename = logDirectory + "/engine_" + startupTimestamp + "_part" + getTimestamp() + ".log";
-
-        // Rename old file and create new one
-        std::filesystem::rename(currentFilename, newFilename);
+        
+        // Increment part number and open new file
+        currentPart++;
         openLogFile();
     }
+}
+
+std::string Logger::formatLogMessage(LogLevel level, const std::string& message) {
+    std::stringstream entry;
+    entry << "[" << getTimestamp() << "] "
+          << "[" << getLevelString(level) << "] "
+          << message;
+    return entry.str();
 } 

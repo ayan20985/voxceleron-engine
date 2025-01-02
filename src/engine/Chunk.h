@@ -47,9 +47,6 @@ private:
     
     // Check if a voxel face should be rendered
     bool shouldRenderFace(int x, int y, int z, int dx, int dy, int dz) const;
-    
-    // Get voxel from world coordinates (including neighboring chunks)
-    const Voxel& getWorldVoxel(int wx, int wy, int wz) const;
 };
 
 #endif // CHUNK_H 

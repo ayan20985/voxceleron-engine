@@ -34,21 +34,6 @@ void Chunk::setVoxel(int x, int y, int z, const Voxel& voxel) {
     }
 }
 
-const Voxel& Chunk::getWorldVoxel(int wx, int wy, int wz) const {
-    // Convert world coordinates to chunk-local coordinates
-    int localX = wx - position.x * CHUNK_SIZE;
-    int localY = wy - position.y * CHUNK_SIZE;
-    int localZ = wz - position.z * CHUNK_SIZE;
-    
-    // If the coordinates are within this chunk, use local getVoxel
-    if (isInBounds(localX, localY, localZ)) {
-        return getVoxel(localX, localY, localZ);
-    }
-    
-    // Otherwise, get the voxel from the world
-    return world->getVoxel(wx, wy, wz);
-}
-
 bool Chunk::shouldRenderFace(int x, int y, int z, int dx, int dy, int dz) const {
     // Get the current voxel
     const Voxel& voxel = getVoxel(x, y, z);
@@ -56,37 +41,29 @@ bool Chunk::shouldRenderFace(int x, int y, int z, int dx, int dy, int dz) const 
         return false;  // Don't render faces for inactive voxels
     }
     
-    // Calculate world coordinates for the neighboring voxel
-    int wx = position.x * CHUNK_SIZE + x + dx;
-    int wy = position.y * CHUNK_SIZE + y + dy;
-    int wz = position.z * CHUNK_SIZE + z + dz;
+    // Check the neighboring voxel within the same chunk
+    int nx = x + dx;
+    int ny = y + dy;
+    int nz = z + dz;
     
-    // Get the neighboring voxel (either from this chunk or a neighboring chunk)
-    const Voxel& neighbor = getWorldVoxel(wx, wy, wz);
+    // If neighbor is outside chunk bounds, only render if we're the higher coordinate chunk
+    if (!isInBounds(nx, ny, nz)) {
+        // For positive direction faces (dx/dy/dz > 0), render if we're at the higher edge (CHUNK_SIZE - 1)
+        // For negative direction faces (dx/dy/dz < 0), render if we're at the lower edge (0)
+        if (dx > 0 && x != CHUNK_SIZE - 1) return false;
+        if (dx < 0 && x != 0) return false;
+        if (dy > 0 && y != CHUNK_SIZE - 1) return false;
+        if (dy < 0 && y != 0) return false;
+        if (dz > 0 && z != CHUNK_SIZE - 1) return false;
+        if (dz < 0 && z != 0) return false;
+        return true;
+    }
+    
+    // Get the neighboring voxel from this chunk
+    const Voxel& neighbor = getVoxel(nx, ny, nz);
     
     // If the neighbor is active (not air), don't render the face
-    if (neighbor.isActive) {
-        return false;
-    }
-    
-    // At chunk boundaries, only render if we're the higher coordinate chunk
-    bool isChunkBoundary = false;
-    if (dx != 0 && (x == 0 || x == CHUNK_SIZE - 1)) isChunkBoundary = true;
-    if (dy != 0 && (y == 0 || y == CHUNK_SIZE - 1)) isChunkBoundary = true;
-    if (dz != 0 && (z == 0 || z == CHUNK_SIZE - 1)) isChunkBoundary = true;
-    
-    if (isChunkBoundary) {
-        // For positive direction faces (dx/dy/dz > 0), render if we're at the lower edge (0)
-        // For negative direction faces (dx/dy/dz < 0), render if we're at the higher edge (CHUNK_SIZE - 1)
-        if (dx > 0 && x == 0) return false;
-        if (dx < 0 && x == CHUNK_SIZE - 1) return false;
-        if (dy > 0 && y == 0) return false;
-        if (dy < 0 && y == CHUNK_SIZE - 1) return false;
-        if (dz > 0 && z == 0) return false;
-        if (dz < 0 && z == CHUNK_SIZE - 1) return false;
-    }
-    
-    return true;
+    return !neighbor.isActive;
 }
 
 void Chunk::clearMesh() {
