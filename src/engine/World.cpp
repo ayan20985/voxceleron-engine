@@ -54,17 +54,17 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
     const float NOISE_SCALE = 0.05f;
     
     try {
-        LOG_WORLDGEN("Generating terrain for chunk at (" + 
-            std::to_string(chunkPos.x) + ", " + 
-            std::to_string(chunkPos.y) + ", " + 
-            std::to_string(chunkPos.z) + ")");
+        // LOG_WORLDGEN("Generating terrain for chunk at (" + 
+        //     std::to_string(chunkPos.x) + ", " + 
+        //     std::to_string(chunkPos.y) + ", " + 
+        //     std::to_string(chunkPos.z) + ")");
         
         Chunk* chunk = getChunk(chunkPos);
         if (!chunk) {
-            LOG_ERROR("Error: Chunk not found at position (" + 
-                std::to_string(chunkPos.x) + ", " + 
-                std::to_string(chunkPos.y) + ", " + 
-                std::to_string(chunkPos.z) + ")");
+            // LOG_ERROR("Error: Chunk not found at position (" + 
+            //     std::to_string(chunkPos.x) + ", " + 
+            //     std::to_string(chunkPos.y) + ", " + 
+            //     std::to_string(chunkPos.z) + ")");
             return;
         }
         
@@ -79,10 +79,10 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
         baseWY += COORDINATE_SHIFT;
         baseWZ += COORDINATE_SHIFT;
         
-        LOG_WORLDGEN("Generating terrain with shifted base coordinates: (" + 
-            std::to_string(baseWX) + ", " + 
-            std::to_string(baseWY) + ", " + 
-            std::to_string(baseWZ) + ")");
+        // LOG_WORLDGEN("Generating terrain with shifted base coordinates: (" + 
+        //     std::to_string(baseWX) + ", " + 
+        //     std::to_string(baseWY) + ", " + 
+        //     std::to_string(baseWZ) + ")");
         
         // Generate terrain for this chunk
         int voxelsSet = 0;
@@ -96,13 +96,13 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
                     try {
                         // Log coordinates before noise calculation
                         if (voxelsSet % 100 == 0) {
-                            LOG_WORLDGEN("Processing coordinates - Local: (" + 
-                                std::to_string(lx) + ", " + 
-                                std::to_string(ly) + ", " + 
-                                std::to_string(lz) + "), World Noise: (" + 
-                                std::to_string(wx) + ", " + 
-                                std::to_string(wy) + ", " + 
-                                std::to_string(wz) + ")");
+                            // LOG_WORLDGEN("Processing coordinates - Local: (" + 
+                            //     std::to_string(lx) + ", " + 
+                            //     std::to_string(ly) + ", " + 
+                            //     std::to_string(lz) + "), World Noise: (" + 
+                            //     std::to_string(wx) + ", " + 
+                            //     std::to_string(wy) + ", " + 
+                            //     std::to_string(wz) + ")");
                         }
                         
                         // Use 3D Perlin noise for terrain generation
@@ -118,27 +118,27 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
                             density = noise1 + noise2 + noise3;
                             
                             if (voxelsSet % 100 == 0) {
-                                LOG_WORLDGEN("Noise values - Base: " + 
-                                    std::to_string(noise1) + ", Mid: " + 
-                                    std::to_string(noise2) + ", High: " + 
-                                    std::to_string(noise3) + ", Final density: " + 
-                                    std::to_string(density));
+                                // LOG_WORLDGEN("Noise values - Base: " + 
+                                //     std::to_string(noise1) + ", Mid: " + 
+                                //     std::to_string(noise2) + ", High: " + 
+                                //     std::to_string(noise3) + ", Final density: " + 
+                                //     std::to_string(density));
                             }
                         } catch (const std::exception& e) {
-                            LOG_ERROR("Error calculating noise at (" + 
-                                std::to_string(wx) + ", " + 
-                                std::to_string(wy) + ", " + 
-                                std::to_string(wz) + "): " + e.what());
-                            LOG_WORLDGEN("Individual coordinates - pos1: (" + 
-                                std::to_string(pos1.x) + ", " + 
-                                std::to_string(pos1.y) + ", " + 
-                                std::to_string(pos1.z) + "), pos2: (" + 
-                                std::to_string(pos2.x) + ", " + 
-                                std::to_string(pos2.y) + ", " + 
-                                std::to_string(pos2.z) + "), pos3: (" + 
-                                std::to_string(pos3.x) + ", " + 
-                                std::to_string(pos3.y) + ", " + 
-                                std::to_string(pos3.z) + ")");
+                            // LOG_ERROR("Error calculating noise at (" + 
+                            //     std::to_string(wx) + ", " + 
+                            //     std::to_string(wy) + ", " + 
+                            //     std::to_string(wz) + "): " + e.what());
+                            // LOG_WORLDGEN("Individual coordinates - pos1: (" + 
+                            //     std::to_string(pos1.x) + ", " + 
+                            //     std::to_string(pos1.y) + ", " + 
+                            //     std::to_string(pos1.z) + "), pos2: (" + 
+                            //     std::to_string(pos2.x) + ", " + 
+                            //     std::to_string(pos2.y) + ", " + 
+                            //     std::to_string(pos2.z) + "), pos3: (" + 
+                            //     std::to_string(pos3.x) + ", " + 
+                            //     std::to_string(pos3.y) + ", " + 
+                            //     std::to_string(pos3.z) + ")");
                             continue;
                         }
                         
@@ -150,85 +150,85 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
                                 voxelsSet++;
                                 
                                 if (voxelsSet % 100 == 0) {
-                                    LOG_WORLDGEN("Successfully set voxel #" + 
-                                        std::to_string(voxelsSet) + " at (" + 
-                                        std::to_string(lx) + ", " + 
-                                        std::to_string(ly) + ", " + 
-                                        std::to_string(lz) + ") with type " + 
-                                        (blockType == VoxelType::STONE ? "STONE" : "GRASS"));
+                                    // LOG_WORLDGEN("Successfully set voxel #" + 
+                                    //     std::to_string(voxelsSet) + " at (" + 
+                                    //     std::to_string(lx) + ", " + 
+                                    //     std::to_string(ly) + ", " + 
+                                    //     std::to_string(lz) + ") with type " + 
+                                    //     (blockType == VoxelType::STONE ? "STONE" : "GRASS"));
                                 }
                             } catch (const std::exception& e) {
-                                LOG_ERROR("Error setting voxel at (" + 
-                                    std::to_string(lx) + ", " + 
-                                    std::to_string(ly) + ", " + 
-                                    std::to_string(lz) + "): " + e.what());
+                                // LOG_ERROR("Error setting voxel at (" + 
+                                //     std::to_string(lx) + ", " + 
+                                //     std::to_string(ly) + ", " + 
+                                //     std::to_string(lz) + "): " + e.what());
                             }
                         }
                     } catch (const std::exception& e) {
-                        LOG_ERROR("Error in main voxel generation loop at (" + 
-                            std::to_string(lx) + ", " + 
-                            std::to_string(ly) + ", " + 
-                            std::to_string(lz) + "): " + e.what());
+                        // LOG_ERROR("Error in main voxel generation loop at (" + 
+                        //     std::to_string(lx) + ", " + 
+                        //     std::to_string(ly) + ", " + 
+                        //     std::to_string(lz) + "): " + e.what());
                     }
                 }
             }
             
             // Periodically flush the log and check chunk validity
             if (lx % 8 == 0) {
-                LOG_WORLDGEN("Progress: " + 
-                    std::to_string(lx * 100 / Chunk::CHUNK_SIZE) + "% complete, " + 
-                    std::to_string(voxelsSet) + " voxels set so far");
+                // LOG_WORLDGEN("Progress: " + 
+                //     std::to_string(lx * 100 / Chunk::CHUNK_SIZE) + "% complete, " + 
+                //     std::to_string(voxelsSet) + " voxels set so far");
                 
                 // Verify chunk is still valid
                 if (!getChunk(chunkPos)) {
-                    LOG_ERROR("Error: Chunk was deleted during generation");
+                    // LOG_ERROR("Error: Chunk was deleted during generation");
                     return;
                 }
             }
         }
         
-        LOG_WORLDGEN("Set " + std::to_string(voxelsSet) + " voxels in chunk");
+        // LOG_WORLDGEN("Set " + std::to_string(voxelsSet) + " voxels in chunk");
         
         // Verify chunk is still valid before mesh generation
         chunk = getChunk(chunkPos);
         if (!chunk) {
-            LOG_ERROR("Error: Chunk was deleted before mesh generation");
+            // LOG_ERROR("Error: Chunk was deleted before mesh generation");
             return;
         }
         
         try {
-            LOG_WORLDGEN("Starting mesh generation...");
+            // LOG_WORLDGEN("Starting mesh generation...");
             
             // Break mesh generation into steps for better error tracking
-            LOG_WORLDGEN("Step 1: Clearing old mesh data...");
+            // LOG_WORLDGEN("Step 1: Clearing old mesh data...");
             chunk->clearMesh();
             
-            LOG_WORLDGEN("Step 2: Building new mesh...");
+            // LOG_WORLDGEN("Step 2: Building new mesh...");
             size_t initialVertexCount = chunk->getVertexData().size();
-            LOG_WORLDGEN("Initial vertex buffer size: " + std::to_string(initialVertexCount));
+            // LOG_WORLDGEN("Initial vertex buffer size: " + std::to_string(initialVertexCount));
             
             chunk->generateMesh();
             
             size_t finalVertexCount = chunk->getVertexData().size();
-            LOG_WORLDGEN("Final vertex buffer size: " + std::to_string(finalVertexCount));
-            LOG_WORLDGEN("Added " + std::to_string(finalVertexCount - initialVertexCount) + " vertices to the mesh");
+            // LOG_WORLDGEN("Final vertex buffer size: " + std::to_string(finalVertexCount));
+            // LOG_WORLDGEN("Added " + std::to_string(finalVertexCount - initialVertexCount) + " vertices to the mesh");
             
-            LOG_WORLDGEN("Mesh generation complete");
+            // LOG_WORLDGEN("Mesh generation complete");
         } catch (const std::exception& e) {
-            LOG_ERROR("Error generating mesh: " + std::string(e.what()));
+            // LOG_ERROR("Error generating mesh: " + std::string(e.what()));
             throw;
         }
         
-        LOG_WORLDGEN("Completed terrain generation for chunk at (" + 
-            std::to_string(chunkPos.x) + ", " + 
-            std::to_string(chunkPos.y) + ", " + 
-            std::to_string(chunkPos.z) + ")");
+        // LOG_WORLDGEN("Completed terrain generation for chunk at (" + 
+        //     std::to_string(chunkPos.x) + ", " + 
+        //     std::to_string(chunkPos.y) + ", " + 
+        //     std::to_string(chunkPos.z) + ")");
         
     } catch (const std::exception& e) {
-        LOG_ERROR("Fatal error generating terrain for chunk at (" + 
-            std::to_string(chunkPos.x) + ", " + 
-            std::to_string(chunkPos.y) + ", " + 
-            std::to_string(chunkPos.z) + "): " + e.what());
+        // LOG_ERROR("Fatal error generating terrain for chunk at (" + 
+        //     std::to_string(chunkPos.x) + ", " + 
+        //     std::to_string(chunkPos.y) + ", " + 
+        //     std::to_string(chunkPos.z) + "): " + e.what());
         throw;
     }
 }
@@ -245,10 +245,10 @@ void World::updateChunksAroundCamera(const glm::vec3& cameraPos) {
         static_cast<int>(cameraPos.z)
     );
     
-    LOG_WORLDGEN("Updating chunks around camera at chunk position (" + 
-        std::to_string(cameraChunkPos.x) + ", " + 
-        std::to_string(cameraChunkPos.y) + ", " + 
-        std::to_string(cameraChunkPos.z) + ")");
+    // LOG_WORLDGEN("Updating chunks around camera at chunk position (" + 
+    //     std::to_string(cameraChunkPos.x) + ", " + 
+    //     std::to_string(cameraChunkPos.y) + ", " + 
+    //     std::to_string(cameraChunkPos.z) + ")");
     
     // Generate chunks in view that don't exist yet
     int chunksGenerated = 0;
@@ -271,24 +271,24 @@ void World::updateChunksAroundCamera(const glm::vec3& cameraPos) {
         // Skip if chunk already exists
         if (!getChunk(chunkPos)) {
             try {
-                LOG_WORLDGEN("Generating chunk at position (" + 
-                    std::to_string(currentX) + ", " + 
-                    std::to_string(currentY) + ", " + 
-                    std::to_string(currentZ) + ")");
+                // LOG_WORLDGEN("Generating chunk at position (" + 
+                //     std::to_string(currentX) + ", " + 
+                //     std::to_string(currentY) + ", " + 
+                //     std::to_string(currentZ) + ")");
                 
                 createChunk(chunkPos);
                 generateChunkTerrain(chunkPos);
                 chunksGenerated++;
                 
-                LOG_WORLDGEN("Successfully generated chunk at position (" + 
-                    std::to_string(currentX) + ", " + 
-                    std::to_string(currentY) + ", " + 
-                    std::to_string(currentZ) + ")");
+                // LOG_WORLDGEN("Successfully generated chunk at position (" + 
+                //     std::to_string(currentX) + ", " + 
+                //     std::to_string(currentY) + ", " + 
+                //     std::to_string(currentZ) + ")");
             } catch (const std::exception& e) {
-                LOG_ERROR("Error generating chunk at (" + 
-                    std::to_string(currentX) + ", " + 
-                    std::to_string(currentY) + ", " + 
-                    std::to_string(currentZ) + "): " + e.what());
+                // LOG_ERROR("Error generating chunk at (" + 
+                //     std::to_string(currentX) + ", " + 
+                //     std::to_string(currentY) + ", " + 
+                //     std::to_string(currentZ) + "): " + e.what());
             }
         }
         
@@ -300,11 +300,11 @@ void World::updateChunksAroundCamera(const glm::vec3& cameraPos) {
         currentX = -WORLD_SIZE/2;
         currentY = -WORLD_SIZE/2;
         currentZ = -WORLD_SIZE/2;
-        LOG_WORLDGEN("Completed full world generation cycle");
+        // LOG_WORLDGEN("Completed full world generation cycle");
     }
     
     if (chunksGenerated > 0) {
-        LOG_WORLDGEN("Generated " + std::to_string(chunksGenerated) + " chunks this update");
+        // LOG_WORLDGEN("Generated " + std::to_string(chunksGenerated) + " chunks this update");
     }
 }
 

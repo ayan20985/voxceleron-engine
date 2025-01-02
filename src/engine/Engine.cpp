@@ -99,7 +99,7 @@ void Engine::init() {
         world->generateTestWorld();
         renderer->setWorld(world.get());  // Pass the raw pointer
         renderer->updateWorldMesh();
-        LOG_WORLDGEN("World initialized successfully");
+        // LOG_WORLDGEN("World initialized successfully");
         
         LOG_INFO("Engine initialization complete");
     } catch (const std::exception& e) {
@@ -186,9 +186,9 @@ void Engine::mainLoop() {
                 frameCount++;
             }
             
-            // Update FPS counter every second
+            // Update FPS counter every 10ms
             float currentTime = static_cast<float>(glfwGetTime());
-            if (currentTime - lastFPSUpdate >= 1.0f) {
+            if (currentTime - lastFPSUpdate >= 0.01f) {
                 float fps = static_cast<float>(frameCount) / (currentTime - lastFPSUpdate);
                 int currentUpdateCount = updateCount.load();
                 float ups = static_cast<float>(currentUpdateCount) / (currentTime - lastFPSUpdate);

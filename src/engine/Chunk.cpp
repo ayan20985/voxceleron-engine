@@ -71,16 +71,16 @@ void Chunk::clearMesh() {
     vertexData.clear();
     vertexData.shrink_to_fit();
     size_t newSize = vertexData.capacity() * sizeof(float);
-    LOG_WORLDGEN("Cleared mesh data. Memory reduced from " + std::to_string(oldSize) + " to " + std::to_string(newSize) + " bytes");
+    // LOG_WORLDGEN("Cleared mesh data. Memory reduced from " + std::to_string(oldSize) + " to " + std::to_string(newSize) + " bytes");
 }
 
 void Chunk::generateMesh() {
     try {
-        LOG_WORLDGEN("Starting mesh generation...");
-        LOG_WORLDGEN("Step 1: Clearing old mesh data...");
+        // LOG_WORLDGEN("Starting mesh generation...");
+        // LOG_WORLDGEN("Step 1: Clearing old mesh data...");
         
         size_t oldCapacity = vertexData.capacity() * sizeof(float);
-        LOG_WORLDGEN("Initial vertex buffer size: " + std::to_string(oldCapacity));
+        // LOG_WORLDGEN("Initial vertex buffer size: " + std::to_string(oldCapacity));
         
         // For each voxel in the chunk
         for (int z = 0; z < CHUNK_SIZE; z++) {
@@ -222,8 +222,8 @@ void Chunk::generateMesh() {
                         // Log if we added any vertices for this voxel
                         size_t verticesAdded = vertexData.size() - initialSize;
                         if (verticesAdded > 0) {
-                            LOG_WORLDGEN("Added " + std::to_string(verticesAdded) + " vertices for voxel at (" 
-                                   + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")");
+                            // LOG_WORLDGEN("Added " + std::to_string(verticesAdded) + " vertices for voxel at (" 
+                                   // + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")");
                         }
                         
                     } catch (const std::exception& e) {
@@ -236,9 +236,9 @@ void Chunk::generateMesh() {
                 }
             }
         }
-        LOG_WORLDGEN("Final vertex buffer size: " + std::to_string(vertexData.capacity() * sizeof(float)));
-        LOG_WORLDGEN("Added " + std::to_string(vertexData.size()) + " vertices to the mesh");
-        LOG_WORLDGEN("Mesh generation complete");
+        // LOG_WORLDGEN("Final vertex buffer size: " + std::to_string(vertexData.capacity() * sizeof(float)));
+        // LOG_WORLDGEN("Added " + std::to_string(vertexData.size()) + " vertices to the mesh");
+        // LOG_WORLDGEN("Mesh generation complete");
         
     } catch (const std::exception& e) {
         LOG_ERROR("Fatal error in mesh generation: " + std::string(e.what()));
