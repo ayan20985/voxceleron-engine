@@ -112,7 +112,7 @@ void Renderer::init(VkInstance vulkanInstance, VkSurfaceKHR vulkanSurface, GLFWw
         init_info.PipelineCache = VK_NULL_HANDLE;
         init_info.DescriptorPool = descriptorPool;
         init_info.MinImageCount = 2;
-        init_info.ImageCount = swapChainImages.size();
+        init_info.ImageCount = static_cast<uint32_t>(swapChainImages.size());
         init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
         init_info.Allocator = nullptr;
         init_info.CheckVkResultFn = nullptr;
@@ -1235,9 +1235,6 @@ uint32_t Renderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags pro
 void Renderer::updateWorldMesh() {
     if (!world) return;
 
-    static std::ofstream logFile("logs/world_generation.log", std::ios::app);
-    logFile << "Starting world mesh update..." << std::endl;
-    
     std::lock_guard<std::mutex> lock(meshUpdateMutex);
     
     try {
@@ -1264,8 +1261,6 @@ void Renderer::updateWorldMesh() {
             
             const std::vector<float>& chunkData = chunk.second->getVertexData();
             size_t vertexCount = chunkData.size() / 9;  // 9 floats per vertex
-            logFile << "Processing chunk at " << chunk.first.x << ", " << chunk.first.y << ", " << chunk.first.z 
-                   << " with " << vertexCount << " vertices" << std::endl;
             
             try {
                 // Reserve space for the vertices to avoid reallocations
@@ -1280,19 +1275,15 @@ void Renderer::updateWorldMesh() {
                     totalVertices++;
                 }
             } catch (const std::exception& e) {
-                logFile << "Error processing chunk vertices: " << e.what() << std::endl;
+                std::cerr << "Error processing chunk vertices: " << e.what() << std::endl;
                 throw;
             }
         }
 
-        logFile << "Total vertices collected: " << totalVertices << std::endl;
-
         // Update GPU buffer
         if (!vertices.empty()) {
             // Always recreate the buffer to ensure proper memory management
-            logFile << "Creating new vertex buffer for " << vertices.size() << " vertices..." << std::endl;
             createVertexBuffer();
-            logFile << "Updating vertex buffer with " << vertices.size() << " vertices..." << std::endl;
             updateVertexBuffer();
         } else {
             // Clean up the buffer if we have no vertices
@@ -1305,12 +1296,8 @@ void Renderer::updateWorldMesh() {
             }
         }
         
-        logFile << "World mesh update completed successfully" << std::endl;
-        logFile.flush();
-        
     } catch (const std::exception& e) {
-        logFile << "Fatal error in updateWorldMesh: " << e.what() << std::endl;
-        logFile.flush();
+        std::cerr << "Fatal error in updateWorldMesh: " << e.what() << std::endl;
         throw;
     }
 }

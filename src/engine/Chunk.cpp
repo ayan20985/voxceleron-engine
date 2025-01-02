@@ -2,6 +2,8 @@
 #include "World.h"
 #include <iostream>
 #include <fstream>
+#include <string>
+#include "Logger.h"
 
 Chunk::Chunk(World* w, const glm::ivec3& pos) : world(w), position(pos) {
     // Initialize all voxels as air
@@ -88,23 +90,21 @@ bool Chunk::shouldRenderFace(int x, int y, int z, int dx, int dy, int dz) const 
 }
 
 void Chunk::clearMesh() {
-    static std::ofstream logFile("logs/world_generation.log", std::ios::app);
     size_t oldSize = vertexData.capacity() * sizeof(float);
     vertexData.clear();
-    vertexData.shrink_to_fit();  // Release memory back to system
+    vertexData.shrink_to_fit();
     size_t newSize = vertexData.capacity() * sizeof(float);
-    logFile << "Cleared mesh data. Memory reduced from " << oldSize << " to " << newSize << " bytes" << std::endl;
+    LOG_WORLDGEN("Cleared mesh data. Memory reduced from " + std::to_string(oldSize) + " to " + std::to_string(newSize) + " bytes");
 }
 
 void Chunk::generateMesh() {
-    static std::ofstream logFile("logs/world_generation.log", std::ios::app);
-    logFile << "Starting mesh generation..." << std::endl;
-    logFile << "Step 1: Clearing old mesh data..." << std::endl;
-    size_t oldCapacity = vertexData.capacity() * sizeof(float);
-    vertexData.clear();
-    logFile << "Initial vertex buffer size: " << oldCapacity << std::endl;
-    
     try {
+        LOG_WORLDGEN("Starting mesh generation...");
+        LOG_WORLDGEN("Step 1: Clearing old mesh data...");
+        
+        size_t oldCapacity = vertexData.capacity() * sizeof(float);
+        LOG_WORLDGEN("Initial vertex buffer size: " + std::to_string(oldCapacity));
+        
         // For each voxel in the chunk
         for (int z = 0; z < CHUNK_SIZE; z++) {
             for (int y = 0; y < CHUNK_SIZE; y++) {
@@ -134,8 +134,10 @@ void Chunk::generateMesh() {
                                     wx + 0, wy + 1, wz + 1, voxel.color.r, voxel.color.g, voxel.color.b, 0, 0, 1
                                 });
                             } catch (const std::exception& e) {
-                                logFile << "Error adding front face vertices at (" << x << ", " << y << ", " << z 
-                                       << "): " << e.what() << std::endl;
+                                LOG_ERROR("Error adding front face vertices at (" + 
+                                    std::to_string(x) + ", " + 
+                                    std::to_string(y) + ", " + 
+                                    std::to_string(z) + "): " + e.what());
                                 throw;
                             }
                         }
@@ -152,8 +154,10 @@ void Chunk::generateMesh() {
                                     wx + 1, wy + 1, wz + 0, voxel.color.r, voxel.color.g, voxel.color.b, 0, 0, -1
                                 });
                             } catch (const std::exception& e) {
-                                logFile << "Error adding back face vertices at (" << x << ", " << y << ", " << z 
-                                       << "): " << e.what() << std::endl;
+                                LOG_ERROR("Error adding back face vertices at (" + 
+                                    std::to_string(x) + ", " + 
+                                    std::to_string(y) + ", " + 
+                                    std::to_string(z) + "): " + e.what());
                                 throw;
                             }
                         }
@@ -170,8 +174,10 @@ void Chunk::generateMesh() {
                                     wx + 1, wy + 1, wz + 1, voxel.color.r, voxel.color.g, voxel.color.b, 1, 0, 0
                                 });
                             } catch (const std::exception& e) {
-                                logFile << "Error adding right face vertices at (" << x << ", " << y << ", " << z 
-                                       << "): " << e.what() << std::endl;
+                                LOG_ERROR("Error adding right face vertices at (" + 
+                                    std::to_string(x) + ", " + 
+                                    std::to_string(y) + ", " + 
+                                    std::to_string(z) + "): " + e.what());
                                 throw;
                             }
                         }
@@ -188,8 +194,10 @@ void Chunk::generateMesh() {
                                     wx + 0, wy + 1, wz + 0, voxel.color.r, voxel.color.g, voxel.color.b, -1, 0, 0
                                 });
                             } catch (const std::exception& e) {
-                                logFile << "Error adding left face vertices at (" << x << ", " << y << ", " << z 
-                                       << "): " << e.what() << std::endl;
+                                LOG_ERROR("Error adding left face vertices at (" + 
+                                    std::to_string(x) + ", " + 
+                                    std::to_string(y) + ", " + 
+                                    std::to_string(z) + "): " + e.what());
                                 throw;
                             }
                         }
@@ -206,8 +214,10 @@ void Chunk::generateMesh() {
                                     wx + 0, wy + 1, wz + 0, voxel.color.r, voxel.color.g, voxel.color.b, 0, 1, 0
                                 });
                             } catch (const std::exception& e) {
-                                logFile << "Error adding top face vertices at (" << x << ", " << y << ", " << z 
-                                       << "): " << e.what() << std::endl;
+                                LOG_ERROR("Error adding top face vertices at (" + 
+                                    std::to_string(x) + ", " + 
+                                    std::to_string(y) + ", " + 
+                                    std::to_string(z) + "): " + e.what());
                                 throw;
                             }
                         }
@@ -224,8 +234,10 @@ void Chunk::generateMesh() {
                                     wx + 0, wy + 0, wz + 1, voxel.color.r, voxel.color.g, voxel.color.b, 0, -1, 0
                                 });
                             } catch (const std::exception& e) {
-                                logFile << "Error adding bottom face vertices at (" << x << ", " << y << ", " << z 
-                                       << "): " << e.what() << std::endl;
+                                LOG_ERROR("Error adding bottom face vertices at (" + 
+                                    std::to_string(x) + ", " + 
+                                    std::to_string(y) + ", " + 
+                                    std::to_string(z) + "): " + e.what());
                                 throw;
                             }
                         }
@@ -233,23 +245,26 @@ void Chunk::generateMesh() {
                         // Log if we added any vertices for this voxel
                         size_t verticesAdded = vertexData.size() - initialSize;
                         if (verticesAdded > 0) {
-                            logFile << "Added " << verticesAdded << " vertices for voxel at (" 
-                                   << x << ", " << y << ", " << z << ")" << std::endl;
+                            LOG_WORLDGEN("Added " + std::to_string(verticesAdded) + " vertices for voxel at (" 
+                                   + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")");
                         }
                         
                     } catch (const std::exception& e) {
-                        logFile << "Error processing voxel faces at (" << x << ", " << y << ", " << z 
-                               << "): " << e.what() << std::endl;
+                        LOG_ERROR("Error processing voxel faces at (" + 
+                            std::to_string(x) + ", " + 
+                            std::to_string(y) + ", " + 
+                            std::to_string(z) + "): " + e.what());
                         throw;
                     }
                 }
             }
         }
-        logFile << "Final vertex buffer size: " << (vertexData.capacity() * sizeof(float)) << std::endl;
-        logFile << "Added " << vertexData.size() << " vertices to the mesh" << std::endl;
-        logFile << "Mesh generation complete" << std::endl;
+        LOG_WORLDGEN("Final vertex buffer size: " + std::to_string(vertexData.capacity() * sizeof(float)));
+        LOG_WORLDGEN("Added " + std::to_string(vertexData.size()) + " vertices to the mesh");
+        LOG_WORLDGEN("Mesh generation complete");
+        
     } catch (const std::exception& e) {
-        logFile << "Fatal error in mesh generation: " << e.what() << std::endl;
+        LOG_ERROR("Fatal error in mesh generation: " + std::string(e.what()));
         throw;
     }
 } 

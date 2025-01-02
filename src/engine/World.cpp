@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include "Logger.h"
 
 World::World() {
 }
@@ -51,17 +52,19 @@ void World::setVoxel(int x, int y, int z, const Voxel& voxel) {
 
 void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
     const float NOISE_SCALE = 0.05f;
-    static std::ofstream logFile("logs/world_generation.log", std::ios::app);
     
     try {
-        logFile << "Starting terrain generation for chunk at (" 
-                << chunkPos.x << ", " << chunkPos.y << ", " << chunkPos.z << ")" << std::endl;
+        LOG_WORLDGEN("Generating terrain for chunk at (" + 
+            std::to_string(chunkPos.x) + ", " + 
+            std::to_string(chunkPos.y) + ", " + 
+            std::to_string(chunkPos.z) + ")");
         
         Chunk* chunk = getChunk(chunkPos);
         if (!chunk) {
-            logFile << "Error: Chunk not found at position (" 
-                    << chunkPos.x << ", " << chunkPos.y << ", " << chunkPos.z << ")" << std::endl;
-            logFile.flush();
+            LOG_ERROR("Error: Chunk not found at position (" + 
+                std::to_string(chunkPos.x) + ", " + 
+                std::to_string(chunkPos.y) + ", " + 
+                std::to_string(chunkPos.z) + ")");
             return;
         }
         
@@ -76,8 +79,10 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
         baseWY += COORDINATE_SHIFT;
         baseWZ += COORDINATE_SHIFT;
         
-        logFile << "Generating terrain with shifted base coordinates: (" 
-                << baseWX << ", " << baseWY << ", " << baseWZ << ")" << std::endl;
+        LOG_WORLDGEN("Generating terrain with shifted base coordinates: (" + 
+            std::to_string(baseWX) + ", " + 
+            std::to_string(baseWY) + ", " + 
+            std::to_string(baseWZ) + ")");
         
         // Generate terrain for this chunk
         int voxelsSet = 0;
@@ -91,8 +96,13 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
                     try {
                         // Log coordinates before noise calculation
                         if (voxelsSet % 100 == 0) {
-                            logFile << "Processing coordinates - Local: (" << lx << ", " << ly << ", " << lz 
-                                   << "), World Noise: (" << wx << ", " << wy << ", " << wz << ")" << std::endl;
+                            LOG_WORLDGEN("Processing coordinates - Local: (" + 
+                                std::to_string(lx) + ", " + 
+                                std::to_string(ly) + ", " + 
+                                std::to_string(lz) + "), World Noise: (" + 
+                                std::to_string(wx) + ", " + 
+                                std::to_string(wy) + ", " + 
+                                std::to_string(wz) + ")");
                         }
                         
                         // Use 3D Perlin noise for terrain generation
@@ -108,17 +118,27 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
                             density = noise1 + noise2 + noise3;
                             
                             if (voxelsSet % 100 == 0) {
-                                logFile << "Noise values - Base: " << noise1 
-                                       << ", Mid: " << noise2 
-                                       << ", High: " << noise3 
-                                       << ", Final density: " << density << std::endl;
+                                LOG_WORLDGEN("Noise values - Base: " + 
+                                    std::to_string(noise1) + ", Mid: " + 
+                                    std::to_string(noise2) + ", High: " + 
+                                    std::to_string(noise3) + ", Final density: " + 
+                                    std::to_string(density));
                             }
                         } catch (const std::exception& e) {
-                            logFile << "Error calculating noise at (" << wx << ", " << wy << ", " << wz 
-                                   << "): " << e.what() << std::endl;
-                            logFile << "Individual coordinates - pos1: (" << pos1.x << ", " << pos1.y << ", " << pos1.z 
-                                   << "), pos2: (" << pos2.x << ", " << pos2.y << ", " << pos2.z 
-                                   << "), pos3: (" << pos3.x << ", " << pos3.y << ", " << pos3.z << ")" << std::endl;
+                            LOG_ERROR("Error calculating noise at (" + 
+                                std::to_string(wx) + ", " + 
+                                std::to_string(wy) + ", " + 
+                                std::to_string(wz) + "): " + e.what());
+                            LOG_WORLDGEN("Individual coordinates - pos1: (" + 
+                                std::to_string(pos1.x) + ", " + 
+                                std::to_string(pos1.y) + ", " + 
+                                std::to_string(pos1.z) + "), pos2: (" + 
+                                std::to_string(pos2.x) + ", " + 
+                                std::to_string(pos2.y) + ", " + 
+                                std::to_string(pos2.z) + "), pos3: (" + 
+                                std::to_string(pos3.x) + ", " + 
+                                std::to_string(pos3.y) + ", " + 
+                                std::to_string(pos3.z) + ")");
                             continue;
                         }
                         
@@ -130,82 +150,85 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
                                 voxelsSet++;
                                 
                                 if (voxelsSet % 100 == 0) {
-                                    logFile << "Successfully set voxel #" << voxelsSet 
-                                           << " at (" << lx << ", " << ly << ", " << lz 
-                                           << ") with type " << (blockType == VoxelType::STONE ? "STONE" : "GRASS") 
-                                           << std::endl;
+                                    LOG_WORLDGEN("Successfully set voxel #" + 
+                                        std::to_string(voxelsSet) + " at (" + 
+                                        std::to_string(lx) + ", " + 
+                                        std::to_string(ly) + ", " + 
+                                        std::to_string(lz) + ") with type " + 
+                                        (blockType == VoxelType::STONE ? "STONE" : "GRASS"));
                                 }
                             } catch (const std::exception& e) {
-                                logFile << "Error setting voxel at (" << lx << ", " << ly << ", " << lz 
-                                       << "): " << e.what() << std::endl;
+                                LOG_ERROR("Error setting voxel at (" + 
+                                    std::to_string(lx) + ", " + 
+                                    std::to_string(ly) + ", " + 
+                                    std::to_string(lz) + "): " + e.what());
                             }
                         }
                     } catch (const std::exception& e) {
-                        logFile << "Error in main voxel generation loop at (" << lx << ", " << ly << ", " << lz 
-                               << "): " << e.what() << std::endl;
+                        LOG_ERROR("Error in main voxel generation loop at (" + 
+                            std::to_string(lx) + ", " + 
+                            std::to_string(ly) + ", " + 
+                            std::to_string(lz) + "): " + e.what());
                     }
                 }
             }
             
             // Periodically flush the log and check chunk validity
             if (lx % 8 == 0) {
-                logFile << "Progress: " << (lx * 100 / Chunk::CHUNK_SIZE) << "% complete, "
-                       << voxelsSet << " voxels set so far" << std::endl;
-                logFile.flush();
+                LOG_WORLDGEN("Progress: " + 
+                    std::to_string(lx * 100 / Chunk::CHUNK_SIZE) + "% complete, " + 
+                    std::to_string(voxelsSet) + " voxels set so far");
                 
                 // Verify chunk is still valid
                 if (!getChunk(chunkPos)) {
-                    logFile << "Error: Chunk was deleted during generation" << std::endl;
-                    logFile.flush();
+                    LOG_ERROR("Error: Chunk was deleted during generation");
                     return;
                 }
             }
         }
         
-        logFile << "Set " << voxelsSet << " voxels in chunk" << std::endl;
+        LOG_WORLDGEN("Set " + std::to_string(voxelsSet) + " voxels in chunk");
         
         // Verify chunk is still valid before mesh generation
         chunk = getChunk(chunkPos);
         if (!chunk) {
-            logFile << "Error: Chunk was deleted before mesh generation" << std::endl;
-            logFile.flush();
+            LOG_ERROR("Error: Chunk was deleted before mesh generation");
             return;
         }
         
         try {
-            logFile << "Starting mesh generation..." << std::endl;
-            logFile.flush();
+            LOG_WORLDGEN("Starting mesh generation...");
             
             // Break mesh generation into steps for better error tracking
-            logFile << "Step 1: Clearing old mesh data..." << std::endl;
+            LOG_WORLDGEN("Step 1: Clearing old mesh data...");
             chunk->clearMesh();
             
-            logFile << "Step 2: Building new mesh..." << std::endl;
+            LOG_WORLDGEN("Step 2: Building new mesh...");
             size_t initialVertexCount = chunk->getVertexData().size();
-            logFile << "Initial vertex buffer size: " << initialVertexCount << std::endl;
+            LOG_WORLDGEN("Initial vertex buffer size: " + std::to_string(initialVertexCount));
             
             chunk->generateMesh();
             
             size_t finalVertexCount = chunk->getVertexData().size();
-            logFile << "Final vertex buffer size: " << finalVertexCount << std::endl;
-            logFile << "Added " << (finalVertexCount - initialVertexCount) << " vertices to the mesh" << std::endl;
+            LOG_WORLDGEN("Final vertex buffer size: " + std::to_string(finalVertexCount));
+            LOG_WORLDGEN("Added " + std::to_string(finalVertexCount - initialVertexCount) + " vertices to the mesh");
             
-            logFile << "Mesh generation complete" << std::endl;
+            LOG_WORLDGEN("Mesh generation complete");
         } catch (const std::exception& e) {
-            logFile << "Error generating mesh: " << e.what() << std::endl;
-            logFile.flush();
+            LOG_ERROR("Error generating mesh: " + std::string(e.what()));
             throw;
         }
         
-        logFile << "Completed terrain generation for chunk at (" 
-                << chunkPos.x << ", " << chunkPos.y << ", " << chunkPos.z << ")" << std::endl;
-        logFile.flush();
+        LOG_WORLDGEN("Completed terrain generation for chunk at (" + 
+            std::to_string(chunkPos.x) + ", " + 
+            std::to_string(chunkPos.y) + ", " + 
+            std::to_string(chunkPos.z) + ")");
         
     } catch (const std::exception& e) {
-        logFile << "Fatal error generating terrain for chunk at (" 
-                << chunkPos.x << ", " << chunkPos.y << ", " << chunkPos.z 
-                << "): " << e.what() << std::endl;
-        logFile.flush();
+        LOG_ERROR("Fatal error generating terrain for chunk at (" + 
+            std::to_string(chunkPos.x) + ", " + 
+            std::to_string(chunkPos.y) + ", " + 
+            std::to_string(chunkPos.z) + "): " + e.what());
         throw;
     }
 }
@@ -216,19 +239,16 @@ void World::updateChunksAroundCamera(const glm::vec3& cameraPos) {
     static int currentY = -WORLD_SIZE/2;
     static int currentZ = -WORLD_SIZE/2;
     
-    // Create logs directory if it doesn't exist
-    std::filesystem::create_directory("logs");
-    static std::ofstream logFile("logs/world_generation.log", std::ios::app);
-    
     glm::ivec3 cameraChunkPos = worldToChunkPos(
         static_cast<int>(cameraPos.x),
         static_cast<int>(cameraPos.y),
         static_cast<int>(cameraPos.z)
     );
     
-    logFile << "Updating chunks around camera at chunk position (" 
-            << cameraChunkPos.x << ", " << cameraChunkPos.y << ", " 
-            << cameraChunkPos.z << ")" << std::endl;
+    LOG_WORLDGEN("Updating chunks around camera at chunk position (" + 
+        std::to_string(cameraChunkPos.x) + ", " + 
+        std::to_string(cameraChunkPos.y) + ", " + 
+        std::to_string(cameraChunkPos.z) + ")");
     
     // Generate chunks in view that don't exist yet
     int chunksGenerated = 0;
@@ -251,18 +271,24 @@ void World::updateChunksAroundCamera(const glm::vec3& cameraPos) {
         // Skip if chunk already exists
         if (!getChunk(chunkPos)) {
             try {
-                logFile << "Generating chunk at position (" 
-                       << currentX << ", " << currentY << ", " << currentZ << ")" << std::endl;
+                LOG_WORLDGEN("Generating chunk at position (" + 
+                    std::to_string(currentX) + ", " + 
+                    std::to_string(currentY) + ", " + 
+                    std::to_string(currentZ) + ")");
                 
                 createChunk(chunkPos);
                 generateChunkTerrain(chunkPos);
                 chunksGenerated++;
                 
-                logFile << "Successfully generated chunk at position (" 
-                       << currentX << ", " << currentY << ", " << currentZ << ")" << std::endl;
+                LOG_WORLDGEN("Successfully generated chunk at position (" + 
+                    std::to_string(currentX) + ", " + 
+                    std::to_string(currentY) + ", " + 
+                    std::to_string(currentZ) + ")");
             } catch (const std::exception& e) {
-                logFile << "Error generating chunk at (" << currentX << ", " << currentY << ", " << currentZ 
-                       << "): " << e.what() << std::endl;
+                LOG_ERROR("Error generating chunk at (" + 
+                    std::to_string(currentX) + ", " + 
+                    std::to_string(currentY) + ", " + 
+                    std::to_string(currentZ) + "): " + e.what());
             }
         }
         
@@ -274,14 +300,12 @@ void World::updateChunksAroundCamera(const glm::vec3& cameraPos) {
         currentX = -WORLD_SIZE/2;
         currentY = -WORLD_SIZE/2;
         currentZ = -WORLD_SIZE/2;
-        logFile << "Completed full world generation cycle" << std::endl;
+        LOG_WORLDGEN("Completed full world generation cycle");
     }
     
     if (chunksGenerated > 0) {
-        logFile << "Generated " << chunksGenerated << " chunks this update" << std::endl;
+        LOG_WORLDGEN("Generated " + std::to_string(chunksGenerated) + " chunks this update");
     }
-    
-    logFile.flush(); // Make sure the log is written immediately
 }
 
 void World::generateTestWorld() {

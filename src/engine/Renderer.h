@@ -50,87 +50,13 @@ struct PerformanceMetrics {
     size_t peakRAM = 0;
     size_t peakVRAM = 0;
     
-    void updateMemoryUsage(size_t ram, size_t vram) {
-        ramUsageMB = ram;
-        vramUsageMB = vram;
-        
-        // Update history
-        ramHistory1Min.push_back(ram);
-        vramHistory1Min.push_back(vram);
-        if (ramHistory1Min.size() > ONE_MINUTE_SAMPLES) {
-            ramHistory1Min.pop_front();
-        }
-        if (vramHistory1Min.size() > ONE_MINUTE_SAMPLES) {
-            vramHistory1Min.pop_front();
-        }
-        
-        // Update peaks
-        peakRAM = std::max(peakRAM, ram);
-        peakVRAM = std::max(peakVRAM, vram);
-    }
-    
-    void updateFPS(float fps) {
-        // Update 1-minute history
-        fpsHistory1Min.push_back(fps);
-        if (fpsHistory1Min.size() > ONE_MINUTE_SAMPLES) {
-            fpsHistory1Min.pop_front();
-        }
-        
-        // Update 5-minute history
-        fpsHistory5Min.push_back(fps);
-        if (fpsHistory5Min.size() > FIVE_MINUTE_SAMPLES) {
-            fpsHistory5Min.pop_front();
-        }
-        
-        // Update min/max/avg
-        minFPS = std::min(minFPS, fps);
-        maxFPS = std::max(maxFPS, fps);
-        avgFPS = 0.0f;
-        for (float f : fpsHistory1Min) {
-            avgFPS += f;
-        }
-        avgFPS /= fpsHistory1Min.size();
-    }
-    
-    void updateUPS(float ups) {
-        // Update 1-minute history
-        upsHistory1Min.push_back(ups);
-        if (upsHistory1Min.size() > ONE_MINUTE_SAMPLES) {
-            upsHistory1Min.pop_front();
-        }
-        
-        // Update 5-minute history
-        upsHistory5Min.push_back(ups);
-        if (upsHistory5Min.size() > FIVE_MINUTE_SAMPLES) {
-            upsHistory5Min.pop_front();
-        }
-        
-        // Update min/max/avg
-        minUPS = std::min(minUPS, ups);
-        maxUPS = std::max(maxUPS, ups);
-        avgUPS = 0.0f;
-        for (float u : upsHistory1Min) {
-            avgUPS += u;
-        }
-        avgUPS /= upsHistory1Min.size();
-    }
-
-    // Helper functions to convert deque to vector for plotting
-    std::vector<float> getFPSHistory1MinVector() const {
-        return std::vector<float>(fpsHistory1Min.begin(), fpsHistory1Min.end());
-    }
-
-    std::vector<float> getUPSHistory1MinVector() const {
-        return std::vector<float>(upsHistory1Min.begin(), upsHistory1Min.end());
-    }
-
-    std::vector<float> getFPSHistory5MinVector() const {
-        return std::vector<float>(fpsHistory5Min.begin(), fpsHistory5Min.end());
-    }
-
-    std::vector<float> getUPSHistory5MinVector() const {
-        return std::vector<float>(upsHistory5Min.begin(), upsHistory5Min.end());
-    }
+    void updateMemoryUsage(size_t ram, size_t vram);
+    void updateFPS(float fps);
+    void updateUPS(float ups);
+    std::vector<float> getFPSHistory1MinVector() const;
+    std::vector<float> getUPSHistory1MinVector() const;
+    std::vector<float> getFPSHistory5MinVector() const;
+    std::vector<float> getUPSHistory5MinVector() const;
 };
 
 struct QueueFamilyIndices {
@@ -147,37 +73,8 @@ struct Vertex {
     glm::vec3 color;
     glm::vec3 normal;
 
-    static VkVertexInputBindingDescription getBindingDescription() {
-        VkVertexInputBindingDescription bindingDescription{};
-        bindingDescription.binding = 0;
-        bindingDescription.stride = sizeof(Vertex);
-        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        return bindingDescription;
-    }
-
-    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
-
-        // Position
-        attributeDescriptions[0].binding = 0;
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-        // Color
-        attributeDescriptions[1].binding = 0;
-        attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-        // Normal
-        attributeDescriptions[2].binding = 0;
-        attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[2].offset = offsetof(Vertex, normal);
-
-        return attributeDescriptions;
-    }
+    static VkVertexInputBindingDescription getBindingDescription();
+    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions();
 };
 
 // Push constants for MVP matrix and lighting

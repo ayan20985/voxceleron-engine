@@ -1,10 +1,10 @@
 #include "Engine.h"
+#include "Logger.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
 #include <atomic>
 #include <filesystem>
-#include <fstream>
 
 Engine::Engine() : 
     isRunning(false), 
@@ -15,7 +15,8 @@ Engine::Engine() :
     surface(VK_NULL_HANDLE),
     firstMouse(true),
     lastX(400.0f),
-    lastY(300.0f) {
+    lastY(300.0f),
+    altWasPressed(false) {
 }
 
 Engine::~Engine() {
@@ -24,25 +25,21 @@ Engine::~Engine() {
 
 void Engine::init() {
     try {
-        // Create logs directory if it doesn't exist
-        std::filesystem::create_directory("logs");
-        static std::ofstream logFile("logs/engine.log", std::ios::app);
-        
-        logFile << "Starting engine initialization..." << std::endl;
+        LOG_INFO("Starting engine initialization...");
         
         // Initialize GLFW
         if (!glfwInit()) {
             throw std::runtime_error("Failed to initialize GLFW");
         }
-        logFile << "GLFW initialized successfully" << std::endl;
+        LOG_INFO("GLFW initialized successfully");
         
         // Create window
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window = glfwCreateWindow(1280, 720, "Voxceleron Engine v2.75", nullptr, nullptr);
+        window = glfwCreateWindow(1280, 720, "Voxceleron Engine v2.76", nullptr, nullptr);
         if (!window) {
             throw std::runtime_error("Failed to create window");
         }
-        logFile << "Window created successfully" << std::endl;
+        LOG_INFO("Window created successfully");
         
         // Center window on screen
         const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
@@ -50,16 +47,16 @@ void Engine::init() {
             int xpos = (mode->width - 1280) / 2;
             int ypos = (mode->height - 720) / 2;
             glfwSetWindowPos(window, xpos, ypos);
-            logFile << "Window centered on screen" << std::endl;
+            LOG_INFO("Window centered on screen");
         }
         
         // Create Vulkan instance
         VkApplicationInfo appInfo{};
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         appInfo.pApplicationName = "Voxceleron Engine";
-        appInfo.applicationVersion = VK_MAKE_VERSION(2, 75, 0);
+        appInfo.applicationVersion = VK_MAKE_VERSION(2, 76, 0);
         appInfo.pEngineName = "Voxceleron";
-        appInfo.engineVersion = VK_MAKE_VERSION(2, 75, 0);
+        appInfo.engineVersion = VK_MAKE_VERSION(2, 76, 0);
         appInfo.apiVersion = VK_API_VERSION_1_0;
         
         VkInstanceCreateInfo createInfo{};
@@ -75,26 +72,26 @@ void Engine::init() {
         if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create Vulkan instance");
         }
-        logFile << "Vulkan instance created successfully" << std::endl;
+        LOG_INFO("Vulkan instance created successfully");
         
         // Create surface
         if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create window surface");
         }
-        logFile << "Window surface created successfully" << std::endl;
+        LOG_INFO("Window surface created successfully");
         
         // Set window user pointer and callbacks
         glfwSetWindowUserPointer(window, this);
         glfwSetCursorPosCallback(window, mouseCallback);
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED); 
-        logFile << "Input callbacks set up successfully" << std::endl;
+        LOG_INFO("Input callbacks set up successfully");
         
         // Initialize renderer with camera
         renderer = new Renderer();
         renderer->setEngine(this);
         renderer->init(instance, surface, window);
         renderer->initCamera();  // Initialize the camera
-        logFile << "Renderer initialized successfully" << std::endl;
+        LOG_RENDER("Renderer initialized successfully");
         
         // Initialize world
         world = std::make_unique<World>();
@@ -102,35 +99,31 @@ void Engine::init() {
         world->generateTestWorld();
         renderer->setWorld(world.get());  // Pass the raw pointer
         renderer->updateWorldMesh();
-        logFile << "World initialized successfully" << std::endl;
+        LOG_WORLDGEN("World initialized successfully");
         
-        logFile << "Engine initialization complete" << std::endl;
-        logFile.flush();
+        LOG_INFO("Engine initialization complete");
     } catch (const std::exception& e) {
-        std::ofstream logFile("logs/error.log", std::ios::app);
-        logFile << "Error during engine initialization: " << e.what() << std::endl;
-        logFile.flush();
+        LOG_ERROR("Error during engine initialization: " + std::string(e.what()));
         throw;
     }
 }
 
 void Engine::mainLoop() {
     try {
-        static std::ofstream logFile("logs/engine.log", std::ios::app);
-        logFile << "Entering main loop..." << std::endl;
+        LOG_INFO("Entering main loop...");
         isRunning = true;
         
         // Set up timing variables
-        double lastFPSUpdate = glfwGetTime();
-        double lastFrame = glfwGetTime();
+        float lastFPSUpdate = static_cast<float>(glfwGetTime());
+        float lastFrame = static_cast<float>(glfwGetTime());
         int frameCount = 0;
         std::atomic<int> updateCount{0};
         
-        logFile << "Starting update thread..." << std::endl;
+        LOG_INFO("Starting update thread...");
         // Start update thread
         std::thread updateThread([this, &updateCount]() {
-            const double targetUPS = 60.0;
-            const std::chrono::duration<double> updateInterval(1.0 / targetUPS);
+            const float targetUPS = 60.0f;
+            const std::chrono::duration<float> updateInterval(1.0f / targetUPS);
             auto lastUpdateTime = std::chrono::steady_clock::now();
             
             while (isRunning) {
@@ -147,12 +140,11 @@ void Engine::mainLoop() {
             }
         });
         
-        logFile << "Starting main render loop..." << std::endl;
-        logFile.flush();
+        LOG_INFO("Starting main render loop...");
         
         // Main loop (render thread)
         while (isRunning && !glfwWindowShouldClose(window)) {
-            double currentFrame = glfwGetTime();
+            float currentFrame = static_cast<float>(glfwGetTime());
             float deltaTime = currentFrame - lastFrame;
             lastFrame = currentFrame;
             
@@ -160,8 +152,30 @@ void Engine::mainLoop() {
             
             // Handle escape key to exit
             if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-                logFile << "Escape key pressed, exiting..." << std::endl;
+                LOG_INFO("Escape key pressed, exiting...");
                 glfwSetWindowShouldClose(window, true);
+            }
+
+            // Handle Alt key state
+            bool altPressed = glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS || 
+                             glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS;
+            
+            // Toggle cursor and input mode when Alt state changes
+            if (altPressed != altWasPressed) {
+                altWasPressed = altPressed;
+                if (altPressed) {
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                    LOG_DEBUG("Cursor mode set to normal (Alt pressed)");
+                } else {
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    // Recenter cursor when returning to game mode
+                    int width, height;
+                    glfwGetWindowSize(window, &width, &height);
+                    glfwSetCursorPos(window, static_cast<float>(width) / 2.0f, static_cast<float>(height) / 2.0f);
+                    lastX = static_cast<float>(width) / 2.0f;
+                    lastY = static_cast<float>(height) / 2.0f;
+                    LOG_DEBUG("Cursor mode set to disabled (Alt released)");
+                }
             }
             
             // Update camera and render
@@ -173,14 +187,13 @@ void Engine::mainLoop() {
             }
             
             // Update FPS counter every second
-            double currentTime = glfwGetTime();
-            if (currentTime - lastFPSUpdate >= 1.0) {
-                float fps = frameCount / (currentTime - lastFPSUpdate);
+            float currentTime = static_cast<float>(glfwGetTime());
+            if (currentTime - lastFPSUpdate >= 1.0f) {
+                float fps = static_cast<float>(frameCount) / (currentTime - lastFPSUpdate);
                 int currentUpdateCount = updateCount.load();
-                float ups = currentUpdateCount / (currentTime - lastFPSUpdate);
+                float ups = static_cast<float>(currentUpdateCount) / (currentTime - lastFPSUpdate);
                 
-                logFile << "FPS: " << fps << ", UPS: " << ups << std::endl;
-                logFile.flush();
+                LOG_PERF("FPS: " + std::to_string(fps) + ", UPS: " + std::to_string(ups));
                 
                 // Store metrics for ImGui display
                 currentFPS.store(fps);
@@ -193,17 +206,15 @@ void Engine::mainLoop() {
             }
         }
         
-        logFile << "Main loop ended, cleaning up..." << std::endl;
+        LOG_INFO("Main loop ended, cleaning up...");
         // Cleanup
         isRunning = false;
         if (updateThread.joinable()) {
             updateThread.join();
         }
-        
+
     } catch (const std::exception& e) {
-        std::ofstream logFile("logs/error.log", std::ios::app);
-        logFile << "Fatal error in main loop: " << e.what() << std::endl;
-        logFile.flush();
+        LOG_ERROR("Fatal error in main loop: " + std::string(e.what()));
         isRunning = false;
         throw;
     }
@@ -243,20 +254,20 @@ void Engine::mouseCallback(GLFWwindow* window, double xpos, double ypos) {
 
     if (engine->altWasPressed) {
         // When Alt is pressed, just update the position without affecting the view
-        engine->lastX = xpos;
-        engine->lastY = ypos;
+        engine->lastX = static_cast<float>(xpos);
+        engine->lastY = static_cast<float>(ypos);
         return;
     }
 
     // When Alt is not pressed, calculate the offset and immediately recenter
-    float xoffset = xpos - engine->lastX;
-    float yoffset = engine->lastY - ypos;  // Reversed since y-coordinates range from bottom to top
+    float xoffset = static_cast<float>(xpos - engine->lastX);
+    float yoffset = static_cast<float>(engine->lastY - ypos);  // Reversed since y-coordinates range from bottom to top
 
     // Get window size for centering
     int width, height;
     glfwGetWindowSize(window, &width, &height);
-    int centerX = width / 2;
-    int centerY = height / 2;
+    float centerX = static_cast<float>(width / 2);
+    float centerY = static_cast<float>(height / 2);
 
     // Update the view with the offset
     engine->renderer->handleMouseMovement(xoffset, yoffset);

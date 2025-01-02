@@ -1,16 +1,18 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <iostream>
 #include "engine/Engine.h"
+#include "engine/Logger.h"
 
 int main() {
     try {
+        LOG_INFO("Starting Voxceleron Engine...");
         Engine engine;
         engine.init();
         engine.mainLoop();
         engine.cleanup();
+        LOG_INFO("Engine shutdown complete");
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        LOG_ERROR(std::string("Fatal error: ") + e.what());
         return EXIT_FAILURE;
     }
 
