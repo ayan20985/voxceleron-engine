@@ -54,7 +54,7 @@ public:
     }
     
 private:
-    static const int WORLD_SIZE = 3;  // World size in chunks (4x4x4)
+    static const int WORLD_SIZE = 4;  // World size in chunks (4x4x4)
     static const int WATER_LEVEL = 32;  // Water level in voxels
     
     std::unordered_map<glm::ivec3, std::unique_ptr<Chunk>, Vec3Hash> chunks;
