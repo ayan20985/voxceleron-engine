@@ -124,6 +124,9 @@ public:
     // Camera access
     Camera* getCamera() const { return camera.get(); }
 
+    std::vector<Vertex> getVertices() const;
+    float getVertexMemoryMB() const;
+
 private:
     // Engine reference
     Engine* engine;

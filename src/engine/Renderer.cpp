@@ -1234,7 +1234,6 @@ uint32_t Renderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags pro
 
 void Renderer::updateWorldMesh() {
     if (!world) return;
-
     std::lock_guard<std::mutex> lock(meshUpdateMutex);
     
     try {
@@ -1307,10 +1306,10 @@ void Renderer::updatePerformanceMetrics() {
     auto currentTime = std::chrono::steady_clock::now();
     float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
     
-    // Update FPS every 1 second
-    if (deltaTime >= 1.0f) {
+    // Update FPS every 1 ms
+    if (deltaTime >= 0.001f) {
         float currentFPS = frameCount / deltaTime;
-        float currentUPS = engine->getUPS();  // Get UPS from engine
+        float currentUPS = engine->getUPS();
         
         // Update metrics
         metrics.updateFPS(currentFPS);
@@ -1352,6 +1351,15 @@ void Renderer::calculateStatistics() {
             }
         }
     }
+}
+
+std::vector<Vertex> Renderer::getVertices() const {
+    return vertices;
+}
+
+float Renderer::getVertexMemoryMB() const {
+    size_t vertexMemoryBytes = vertices.size() * sizeof(Vertex);
+    return static_cast<float>(vertexMemoryBytes) / (1024.0f * 1024.0f);
 }
 
 void Renderer::createDescriptorPool() {

@@ -124,11 +124,11 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
                                 //     std::to_string(noise3) + ", Final density: " + 
                                 //     std::to_string(density));
                             }
-                        } catch (const std::exception& e) {
-                            // LOG_ERROR("Error calculating noise at (" + 
-                            //     std::to_string(wx) + ", " + 
-                            //     std::to_string(wy) + ", " + 
-                            //     std::to_string(wz) + "): " + e.what());
+                        } catch (const std::exception & e) {
+                            LOG_ERROR("Error calculating noise at (" + 
+                                std::to_string(wx) + ", " + 
+                                std::to_string(wy) + ", " + 
+                                std::to_string(wz) + "): " + e.what());
                             // LOG_WORLDGEN("Individual coordinates - pos1: (" + 
                             //     std::to_string(pos1.x) + ", " + 
                             //     std::to_string(pos1.y) + ", " + 
@@ -158,17 +158,17 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
                                     //     (blockType == VoxelType::STONE ? "STONE" : "GRASS"));
                                 }
                             } catch (const std::exception& e) {
-                                // LOG_ERROR("Error setting voxel at (" + 
-                                //     std::to_string(lx) + ", " + 
-                                //     std::to_string(ly) + ", " + 
-                                //     std::to_string(lz) + "): " + e.what());
+                                LOG_ERROR("Error setting voxel at (" + 
+                                    std::to_string(lx) + ", " + 
+                                    std::to_string(ly) + ", " + 
+                                    std::to_string(lz) + "): " + e.what());
                             }
                         }
                     } catch (const std::exception& e) {
-                        // LOG_ERROR("Error in main voxel generation loop at (" + 
-                        //     std::to_string(lx) + ", " + 
-                        //     std::to_string(ly) + ", " + 
-                        //     std::to_string(lz) + "): " + e.what());
+                        LOG_ERROR("Error in main voxel generation loop at (" + 
+                            std::to_string(lx) + ", " + 
+                            std::to_string(ly) + ", " + 
+                            std::to_string(lz) + "): " + e.what());
                     }
                 }
             }
@@ -215,7 +215,7 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
             
             // LOG_WORLDGEN("Mesh generation complete");
         } catch (const std::exception& e) {
-            // LOG_ERROR("Error generating mesh: " + std::string(e.what()));
+            LOG_ERROR("Error generating mesh: " + std::string(e.what()));
             throw;
         }
         
@@ -225,10 +225,10 @@ void World::generateChunkTerrain(const glm::ivec3& chunkPos) {
         //     std::to_string(chunkPos.z) + ")");
         
     } catch (const std::exception& e) {
-        // LOG_ERROR("Fatal error generating terrain for chunk at (" + 
-        //     std::to_string(chunkPos.x) + ", " + 
-        //     std::to_string(chunkPos.y) + ", " + 
-        //     std::to_string(chunkPos.z) + "): " + e.what());
+        LOG_ERROR("Fatal error generating terrain for chunk at (" + 
+            std::to_string(chunkPos.x) + ", " + 
+            std::to_string(chunkPos.y) + ", " + 
+            std::to_string(chunkPos.z) + "): " + e.what());
         throw;
     }
 }
@@ -285,10 +285,10 @@ void World::updateChunksAroundCamera(const glm::vec3& cameraPos) {
                 //     std::to_string(currentY) + ", " + 
                 //     std::to_string(currentZ) + ")");
             } catch (const std::exception& e) {
-                // LOG_ERROR("Error generating chunk at (" + 
-                //     std::to_string(currentX) + ", " + 
-                //     std::to_string(currentY) + ", " + 
-                //     std::to_string(currentZ) + "): " + e.what());
+                LOG_ERROR("Error generating chunk at (" + 
+                    std::to_string(currentX) + ", " + 
+                    std::to_string(currentY) + ", " + 
+                    std::to_string(currentZ) + "): " + e.what());
             }
         }
         

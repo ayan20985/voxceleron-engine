@@ -193,7 +193,7 @@ void Engine::mainLoop() {
                 int currentUpdateCount = updateCount.load();
                 float ups = static_cast<float>(currentUpdateCount) / (currentTime - lastFPSUpdate);
                 
-                LOG_PERF("FPS: " + std::to_string(fps) + ", UPS: " + std::to_string(ups));
+                LOG_PERF("FPS: " + std::to_string(fps) + ", UPS: " + std::to_string(ups) + ", Voxels: " + std::to_string(renderer->getTotalVoxels()) + ", Faces: " + std::to_string(renderer->getTotalFaces()) + ", Vertices: " + std::to_string(renderer->getVertices().size()) + ", Memory: " + std::to_string(renderer->getVertexMemoryMB()) + "MB");
                 
                 // Store metrics for ImGui display
                 currentFPS.store(fps);
