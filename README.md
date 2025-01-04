@@ -8,38 +8,38 @@ The current codebase is organized for maintainability and extensibility while la
 ```
 src/engine/
 ├── core/                           # Core engine systems
-│   ├── Engine.h/cpp               # Main engine class (simplified)
-│   ├── Window.h/cpp               # Window management
-│   └── GameLoop.h/cpp             # Main loop and timing
-├── vulkan/                        # Vulkan systems
+│   ├── Engine.h/cpp                # Main engine class (simplified)
+│   ├── Window.h/cpp                # Window management
+│   └── GameLoop.h/cpp              # Main loop and timing
+├── vulkan/                         # Vulkan systems
 │   ├── core/
-│   │   ├── VulkanContext.h/cpp    # Instance & device management
-│   │   ├── SwapChain.h/cpp        # Swap chain management
-│   │   └── CommandPool.h/cpp      # Command buffer management
+│   │   ├── VulkanContext.h/cpp     # Instance & device management
+│   │   ├── SwapChain.h/cpp         # Swap chain management
+│   │   └── CommandPool.h/cpp       # Command buffer management
 │   ├── memory/
-│   │   ├── Allocator.h/cpp        # Memory allocation
-│   │   └── Buffer.h/cpp           # Buffer management
+│   │   ├── Allocator.h/cpp         # Memory allocation
+│   │   └── Buffer.h/cpp            # Buffer management
 │   └── pipeline/
-│       ├── Pipeline.h/cpp         # Graphics pipeline
-│       └── RenderPass.h/cpp       # Render pass management
-├── renderer/                      # High-level rendering
-│   ├── Renderer.h/cpp            # Main renderer (simplified)
-│   ├── RenderQueue.h/cpp         # Command scheduling
-│   └── Mesh.h/cpp               # Mesh handling
-├── voxel/                        # Voxel engine core
-│   ├── World.h/cpp              # World management
-│   ├── Chunk.h/cpp              # Chunk system
-│   ├── ChunkManager.h/cpp       # Chunk loading/unloading
-│   └── VoxelTypes.h/cpp         # Voxel definitions
-├── graphics/                     # Graphics utilities
-│   ├── Camera.h/cpp             # Camera system
-│   ├── Shader.h/cpp             # Shader management
-│   └── Material.h/cpp           # Material system
-└── utils/                       # Core utilities
-    ├── Logger.h/cpp             # Logging system
-    ├── ThreadPool.h/cpp         # Basic thread management
-    ├── Profiler.h/cpp           # Performance tracking
-    └── ResourceManager.h/cpp    # Resource management
+│       ├── Pipeline.h/cpp          # Graphics pipeline
+│       └── RenderPass.h/cpp        # Render pass management
+├── renderer/                       # High-level rendering
+│   ├── Renderer.h/cpp              # Main renderer (simplified)
+│   ├── RenderQueue.h/cpp           # Command scheduling
+│   └── Mesh.h/cpp                  # Mesh handling
+├── voxel/                          # Voxel engine core
+│   ├── World.h/cpp                 # World management
+│   ├── Chunk.h/cpp                 # Chunk system
+│   ├── ChunkManager.h/cpp          # Chunk loading/unloading
+│   └── VoxelTypes.h/cpp            # Voxel definitions
+├── graphics/                       # Graphics utilities
+│   ├── Camera.h/cpp                # Camera system
+│   ├── Shader.h/cpp                # Shader management
+│   └── Material.h/cpp              # Material system
+└── utils/                          # Core utilities
+    ├── Logger.h/cpp                # Logging system
+    ├── ThreadPool.h/cpp            # Basic thread management
+    ├── Profiler.h/cpp              # Performance tracking
+    └── ResourceManager.h/cpp       # Resource management
 ```
 
 ### Key Features and Design Decisions
@@ -184,65 +184,65 @@ The planned architecture to support 64,000 voxel render distances and 512 player
 ```
 src/engine/
 ├── core/                           # Core engine systems
-│   ├── Engine.h/cpp               # Main engine coordinator
-│   ├── Window.h/cpp               # Window management
-│   └── Config.h/cpp               # Engine configuration
-├── vulkan/                        # High-performance Vulkan systems
+│   ├── Engine.h/cpp                # Main engine coordinator
+│   ├── Window.h/cpp                # Window management
+│   └── Config.h/cpp                # Engine configuration
+├── vulkan/                         # High-performance Vulkan systems
 │   ├── core/
-│   │   ├── VulkanContext.h/cpp    # Vulkan instance & device
-│   │   ├── SwapChain.h/cpp        # Presentation management
+│   │   ├── VulkanContext.h/cpp     # Vulkan instance & device
+│   │   ├── SwapChain.h/cpp         # Presentation management
 │   │   └── CommandManager.h/cpp    # Command buffer management
 │   ├── memory/
-│   │   ├── ChunkAllocator.h/cpp   # Specialized chunk memory management
+│   │   ├── ChunkAllocator.h/cpp    # Specialized chunk memory management
 │   │   ├── StreamingAllocator.h/cpp # Streaming memory for distant chunks
 │   │   └── GPUMemoryPool.h/cpp     # GPU memory management
 │   ├── pipeline/
-│   │   ├── ChunkPipeline.h/cpp    # Specialized voxel rendering pipeline
-│   │   ├── LODPipeline.h/cpp      # Level of detail pipeline
-│   │   └── ComputePipeline.h/cpp  # Compute-based optimizations
+│   │   ├── ChunkPipeline.h/cpp     # Specialized voxel rendering pipeline
+│   │   ├── LODPipeline.h/cpp       # Level of detail pipeline
+│   │   └── ComputePipeline.h/cpp   # Compute-based optimizations
 │   └── compute/
-│       ├── MeshGenerator.h/cpp    # GPU-accelerated mesh generation
-│       ├── ChunkCompressor.h/cpp  # Chunk data compression
-│       └── OcclusionCuller.h/cpp  # Compute-based occlusion culling
-├── voxel/                         # Voxel engine core
+│       ├── MeshGenerator.h/cpp     # GPU-accelerated mesh generation
+│       ├── ChunkCompressor.h/cpp   # Chunk data compression
+│       └── OcclusionCuller.h/cpp   # Compute-based occlusion culling
+├── voxel/                          # Voxel engine core
 │   ├── world/
-│   │   ├── World.h/cpp           # World management
-│   │   ├── WorldPartition.h/cpp  # World space partitioning
-│   │   └── WorldStreamer.h/cpp   # Streaming world management
+│   │   ├── World.h/cpp             # World management
+│   │   ├── WorldPartition.h/cpp    # World space partitioning
+│   │   └── WorldStreamer.h/cpp     # Streaming world management
 │   ├── chunk/
-│   │   ├── Chunk.h/cpp           # Chunk data structure
-│   │   ├── ChunkManager.h/cpp    # Chunk lifecycle management
-│   │   ├── ChunkMesh.h/cpp       # Mesh generation
-│   │   ├── ChunkLOD.h/cpp        # Level of detail system
-│   │   └── ChunkCache.h/cpp      # Chunk data caching
+│   │   ├── Chunk.h/cpp             # Chunk data structure
+│   │   ├── ChunkManager.h/cpp      # Chunk lifecycle management
+│   │   ├── ChunkMesh.h/cpp         # Mesh generation
+│   │   ├── ChunkLOD.h/cpp          # Level of detail system
+│   │   └── ChunkCache.h/cpp        # Chunk data caching
 │   ├── streaming/
-│   │   ├── StreamingManager.h/cpp # Manages chunk streaming
-│   │   ├── ChunkLoader.h/cpp     # Asynchronous chunk loading
-│   │   └── ChunkCompression.h/cpp # Chunk data compression
+│   │   ├── StreamingManager.h/cpp  # Manages chunk streaming
+│   │   ├── ChunkLoader.h/cpp       # Asynchronous chunk loading
+│   │   └── ChunkCompression.h/cpp  # Chunk data compression
 │   └── physics/
-│       ├── VoxelCollision.h/cpp  # Voxel-based collision
-│       └── PlayerPhysics.h/cpp   # Player movement & collision
-├── network/                       # Networking for 512 players
+│       ├── VoxelCollision.h/cpp    # Voxel-based collision
+│       └── PlayerPhysics.h/cpp     # Player movement & collision
+├── network/                        # Networking for 512 players
 │   ├── core/
-│   │   ├── NetworkManager.h/cpp  # Network management
-│   │   └── Protocol.h/cpp        # Network protocol
+│   │   ├── NetworkManager.h/cpp    # Network management
+│   │   └── Protocol.h/cpp          # Network protocol
 │   ├── client/
-│   │   ├── ClientNetwork.h/cpp   # Client networking
-│   │   └── Prediction.h/cpp      # Client-side prediction
+│   │   ├── ClientNetwork.h/cpp     # Client networking
+│   │   └── Prediction.h/cpp        # Client-side prediction
 │   └── server/
-│       ├── ServerNetwork.h/cpp   # Server networking
-│       ├── PlayerManager.h/cpp   # Manage 512 players
-│       └── WorldSync.h/cpp       # World state synchronization
-├── threading/                     # Advanced threading
-│   ├── ThreadPool.h/cpp          # Thread management
-│   ├── JobSystem.h/cpp           # Task scheduling
-│   ├── WorkStealingQueue.h/cpp   # Work stealing scheduler
-│   └── AsyncTasks.h/cpp          # Async task management
-└── optimization/                  # Performance optimization
-    ├── MemoryOptimizer.h/cpp     # Memory usage optimization
-    ├── ChunkOptimizer.h/cpp      # Chunk optimization
-    ├── LODManager.h/cpp          # LOD system
-    └── Profiler.h/cpp            # Performance profiling
+│       ├── ServerNetwork.h/cpp     # Server networking
+│       ├── PlayerManager.h/cpp     # Manage 512 players
+│       └── WorldSync.h/cpp         # World state synchronization
+├── threading/                      # Advanced threading
+│   ├── ThreadPool.h/cpp            # Thread management
+│   ├── JobSystem.h/cpp             # Task scheduling
+│   ├── WorkStealingQueue.h/cpp     # Work stealing scheduler
+│   └── AsyncTasks.h/cpp            # Async task management
+└── optimization/                   # Performance optimization
+    ├── MemoryOptimizer.h/cpp       # Memory usage optimization
+    ├── ChunkOptimizer.h/cpp        # Chunk optimization
+    ├── LODManager.h/cpp            # LOD system
+    └── Profiler.h/cpp              # Performance profiling
 ```
 
 ### Advanced Features and Design Decisions
