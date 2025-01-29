@@ -1,0 +1,168 @@
+#version 450
+#extension GL_EXT_nonuniform_qualifier : require
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    ivec3 nodePosition;
+    uint nodeSize;
+    uint maxVertices;
+    uint maxIndices;
+} pc;
+
+// Input voxel data
+layout(std430, binding = 0) readonly buffer VoxelBuffer {
+    uint data[];
+} voxels;
+
+// Output mesh data
+layout(std430, binding = 1) buffer MeshBuffer {
+    // Vertex data: [pos.xyz, normal.xyz, uv.xy]
+    float data[];
+} vertices;
+
+layout(std430, binding = 2) buffer IndexBuffer {
+    uint data[];
+} indices;
+
+// Atomic counter for vertex and index counts
+layout(std430, binding = 3) buffer CounterBuffer {
+    uint vertexCounter;
+    uint indexCounter;
+} counters;
+
+// Constants
+const float VERTEX_STRIDE = 8.0; // 8 floats per vertex (pos.xyz, normal.xyz, uv.xy)
+const uint VOXEL_TYPE_MASK = 0xFF;
+const uint VOXEL_COLOR_MASK = 0xFFFFFF00;
+const uint VOXEL_COLOR_SHIFT = 8;
+
+// Helper functions
+bool isVoxelSolid(ivec3 pos) {
+    if (pos.x < 0 || pos.y < 0 || pos.z < 0 || 
+        pos.x >= int(pc.nodeSize) || pos.y >= int(pc.nodeSize) || pos.z >= int(pc.nodeSize)) {
+        return false;
+    }
+    uint index = pos.x + pos.y * int(pc.nodeSize) + pos.z * int(pc.nodeSize) * int(pc.nodeSize);
+    return (voxels.data[index] & VOXEL_TYPE_MASK) != 0;
+}
+
+vec3 getVoxelColor(ivec3 pos) {
+    uint index = pos.x + pos.y * int(pc.nodeSize) + pos.z * int(pc.nodeSize) * int(pc.nodeSize);
+    uint color = (voxels.data[index] & VOXEL_COLOR_MASK) >> VOXEL_COLOR_SHIFT;
+    return vec3(
+        float((color >> 16) & 0xFF) / 255.0,
+        float((color >> 8) & 0xFF) / 255.0,
+        float(color & 0xFF) / 255.0
+    );
+}
+
+// Add a vertex to the mesh
+uint addVertex(vec3 pos, vec3 normal, vec2 uv, vec3 color) {
+    uint index = atomicAdd(counters.vertexCounter, 1);
+    if (index >= pc.maxVertices) return 0;
+
+    uint offset = index * uint(VERTEX_STRIDE);
+    vertices.data[offset + 0] = pos.x;
+    vertices.data[offset + 1] = pos.y;
+    vertices.data[offset + 2] = pos.z;
+    vertices.data[offset + 3] = normal.x;
+    vertices.data[offset + 4] = normal.y;
+    vertices.data[offset + 5] = normal.z;
+    vertices.data[offset + 6] = uv.x;
+    vertices.data[offset + 7] = uv.y;
+    return index;
+}
+
+// Add a triangle to the mesh
+void addTriangle(uint v1, uint v2, uint v3) {
+    uint index = atomicAdd(counters.indexCounter, 3);
+    if (index + 2 >= pc.maxIndices) return;
+
+    indices.data[index + 0] = v1;
+    indices.data[index + 1] = v2;
+    indices.data[index + 2] = v3;
+}
+
+void main() {
+    // Get voxel position
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+    if (pos.x >= int(pc.nodeSize) || pos.y >= int(pc.nodeSize) || pos.z >= int(pc.nodeSize)) return;
+
+    // Skip if voxel is not solid
+    if (!isVoxelSolid(pos)) return;
+
+    // Get voxel color
+    vec3 color = getVoxelColor(pos);
+
+    // Convert to world space
+    vec3 worldPos = vec3(pc.nodePosition + pos);
+
+    // Check each face
+    // Front face (+Z)
+    if (!isVoxelSolid(pos + ivec3(0, 0, 1))) {
+        vec3 normal = vec3(0, 0, 1);
+        uint v0 = addVertex(worldPos + vec3(0, 0, 1), normal, vec2(0, 0), color);
+        uint v1 = addVertex(worldPos + vec3(1, 0, 1), normal, vec2(1, 0), color);
+        uint v2 = addVertex(worldPos + vec3(1, 1, 1), normal, vec2(1, 1), color);
+        uint v3 = addVertex(worldPos + vec3(0, 1, 1), normal, vec2(0, 1), color);
+        addTriangle(v0, v1, v2);
+        addTriangle(v0, v2, v3);
+    }
+
+    // Back face (-Z)
+    if (!isVoxelSolid(pos + ivec3(0, 0, -1))) {
+        vec3 normal = vec3(0, 0, -1);
+        uint v0 = addVertex(worldPos + vec3(0, 0, 0), normal, vec2(1, 0), color);
+        uint v1 = addVertex(worldPos + vec3(0, 1, 0), normal, vec2(1, 1), color);
+        uint v2 = addVertex(worldPos + vec3(1, 1, 0), normal, vec2(0, 1), color);
+        uint v3 = addVertex(worldPos + vec3(1, 0, 0), normal, vec2(0, 0), color);
+        addTriangle(v0, v1, v2);
+        addTriangle(v0, v2, v3);
+    }
+
+    // Right face (+X)
+    if (!isVoxelSolid(pos + ivec3(1, 0, 0))) {
+        vec3 normal = vec3(1, 0, 0);
+        uint v0 = addVertex(worldPos + vec3(1, 0, 0), normal, vec2(1, 0), color);
+        uint v1 = addVertex(worldPos + vec3(1, 1, 0), normal, vec2(1, 1), color);
+        uint v2 = addVertex(worldPos + vec3(1, 1, 1), normal, vec2(0, 1), color);
+        uint v3 = addVertex(worldPos + vec3(1, 0, 1), normal, vec2(0, 0), color);
+        addTriangle(v0, v1, v2);
+        addTriangle(v0, v2, v3);
+    }
+
+    // Left face (-X)
+    if (!isVoxelSolid(pos + ivec3(-1, 0, 0))) {
+        vec3 normal = vec3(-1, 0, 0);
+        uint v0 = addVertex(worldPos + vec3(0, 0, 0), normal, vec2(0, 0), color);
+        uint v1 = addVertex(worldPos + vec3(0, 0, 1), normal, vec2(1, 0), color);
+        uint v2 = addVertex(worldPos + vec3(0, 1, 1), normal, vec2(1, 1), color);
+        uint v3 = addVertex(worldPos + vec3(0, 1, 0), normal, vec2(0, 1), color);
+        addTriangle(v0, v1, v2);
+        addTriangle(v0, v2, v3);
+    }
+
+    // Top face (+Y)
+    if (!isVoxelSolid(pos + ivec3(0, 1, 0))) {
+        vec3 normal = vec3(0, 1, 0);
+        uint v0 = addVertex(worldPos + vec3(0, 1, 0), normal, vec2(0, 0), color);
+        uint v1 = addVertex(worldPos + vec3(0, 1, 1), normal, vec2(0, 1), color);
+        uint v2 = addVertex(worldPos + vec3(1, 1, 1), normal, vec2(1, 1), color);
+        uint v3 = addVertex(worldPos + vec3(1, 1, 0), normal, vec2(1, 0), color);
+        addTriangle(v0, v1, v2);
+        addTriangle(v0, v2, v3);
+    }
+
+    // Bottom face (-Y)
+    if (!isVoxelSolid(pos + ivec3(0, -1, 0))) {
+        vec3 normal = vec3(0, -1, 0);
+        uint v0 = addVertex(worldPos + vec3(0, 0, 0), normal, vec2(0, 1), color);
+        uint v1 = addVertex(worldPos + vec3(1, 0, 0), normal, vec2(1, 1), color);
+        uint v2 = addVertex(worldPos + vec3(1, 0, 1), normal, vec2(1, 0), color);
+        uint v3 = addVertex(worldPos + vec3(0, 0, 1), normal, vec2(0, 0), color);
+        addTriangle(v0, v1, v2);
+        addTriangle(v0, v2, v3);
+    }
+} 

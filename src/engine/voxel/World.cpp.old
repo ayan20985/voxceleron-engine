@@ -1,0 +1,1064 @@
+#include "World.h"
+#include "WorldRenderer.h"
+#include "../core/Camera.h"
+#include "../vulkan/core/VulkanContext.h"
+#include <iostream>
+#include <algorithm>
+#include <fstream>
+#include <functional>
+#include <glm/gtc/matrix_transform.hpp>
+
+namespace voxceleron {
+
+World::World(VulkanContext* context)
+    : context(context)
+    , device(context->getDevice())
+    , physicalDevice(context->getPhysicalDevice())
+    , descriptorPool(VK_NULL_HANDLE)
+    , descriptorSetLayout(VK_NULL_HANDLE)
+    , pipelineLayout(VK_NULL_HANDLE)
+    , computePipeline(VK_NULL_HANDLE)
+    , computeQueue(VK_NULL_HANDLE)
+    , commandPool(VK_NULL_HANDLE) {
+    std::cout << "World: Creating world instance" << std::endl;
+}
+
+World::~World() {
+    std::cout << "World: Destroying world instance" << std::endl;
+    cleanup();
+}
+
+bool World::initialize() {
+    std::cout << "World: Starting initialization..." << std::endl;
+
+    // Create root node
+    root = std::make_unique<OctreeNode>();
+    root->position = glm::ivec3(0);
+    root->size = 1 << MAX_LEVEL;
+    root->level = 0;
+    root->isLeaf = true;
+
+    // Create renderer
+    renderer = std::make_unique<WorldRenderer>();
+    if (!renderer->initialize(device, physicalDevice)) {
+        std::cerr << "World: Failed to initialize renderer" << std::endl;
+        return false;
+    }
+
+    // Create compute pipeline for mesh generation
+    if (!createComputePipeline()) {
+        std::cerr << "World: Failed to create compute pipeline" << std::endl;
+        return false;
+    }
+
+    std::cout << "World: Initialization complete" << std::endl;
+    return true;
+}
+
+void World::cleanup() {
+    std::cout << "World: Starting cleanup..." << std::endl;
+
+    // Clean up renderer
+    if (renderer) {
+        renderer.reset();
+    }
+
+    // Clean up mesh data
+    for (auto& [node, meshData] : meshes) {
+        cleanupMeshData(meshData);
+    }
+    meshes.clear();
+
+    // Clean up Vulkan resources
+    if (device != VK_NULL_HANDLE) {
+        if (computePipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, computePipeline, nullptr);
+            computePipeline = VK_NULL_HANDLE;
+        }
+
+        if (pipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+            pipelineLayout = VK_NULL_HANDLE;
+        }
+
+        if (descriptorSetLayout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+            descriptorSetLayout = VK_NULL_HANDLE;
+        }
+
+        if (descriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+            descriptorPool = VK_NULL_HANDLE;
+        }
+
+        if (commandPool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(device, commandPool, nullptr);
+            commandPool = VK_NULL_HANDLE;
+        }
+    }
+
+    // Clean up octree
+    root.reset();
+
+    std::cout << "World: Cleanup complete" << std::endl;
+}
+
+void World::setVoxel(const glm::ivec3& pos, const Voxel& voxel) {
+    // Find or create the node at the position
+    OctreeNode* node = findNode(pos, true);
+    if (!node) return;
+
+    // Ensure the node is a leaf
+    if (!node->isLeaf) {
+        subdivideNode(node);
+    }
+
+    // Set the voxel data
+    if (node->isLeaf) {
+        // Calculate local position within the node
+        glm::ivec3 localPos = pos - node->position;
+        uint32_t index = (localPos.x & 1) | ((localPos.y & 1) << 1) | ((localPos.z & 1) << 2);
+        
+        // Add the voxel to the run-length encoded data
+        node->nodeData.leaf.addVoxel(voxel);
+        node->needsUpdate = true;
+    }
+}
+
+Voxel World::getVoxel(const glm::ivec3& pos) const {
+    // Find the node at the position
+    const OctreeNode* node = findNode(pos);
+    if (!node || !node->isLeaf) {
+        return Voxel{0, 0}; // Return air voxel
+    }
+
+    // Calculate local position within the node
+    glm::ivec3 localPos = pos - node->position;
+    uint32_t index = (localPos.x & 1) | ((localPos.y & 1) << 1) | ((localPos.z & 1) << 2);
+
+    // Get the voxel from the run-length encoded data
+    return node->nodeData.leaf.getVoxel(index);
+}
+
+void World::updateLOD(const glm::vec3& viewerPos) {
+    if (!root) return;
+
+    // Update LOD levels based on distance from viewer
+    std::function<void(OctreeNode*, const glm::vec3&)> updateNode = 
+        [&](OctreeNode* node, const glm::vec3& pos) {
+            if (!node) return;
+
+            // Calculate distance to viewer
+            glm::vec3 center = glm::vec3(node->position) + glm::vec3(node->size / 2);
+            float distance = glm::length(center - pos);
+
+            // Determine desired LOD level based on distance
+            float factor = distance / (node->size * 2.0f);
+            uint32_t desiredLevel = static_cast<uint32_t>(glm::log2(factor));
+            desiredLevel = glm::clamp(desiredLevel, 0u, MAX_LEVEL);
+
+            // Split or merge based on desired level
+            if (desiredLevel > node->level && !node->isLeaf) {
+                // Node is too detailed, try to merge
+                optimizeNode(node);
+            } else if (desiredLevel < node->level && node->isLeaf) {
+                // Node needs more detail, split
+                subdivideNode(node);
+            }
+
+            // Recursively update children
+            if (!node->isLeaf) {
+                for (uint8_t i = 0; i < 8; ++i) {
+                    if (node->childMask & (1 << i)) {
+                        updateNode(node->nodeData.internal.children[i].get(), pos);
+                    }
+                }
+            }
+        };
+
+    updateNode(root.get(), viewerPos);
+}
+
+void World::generateMeshes(const glm::vec3& viewerPos) {
+    if (!root) return;
+
+    // Queue of nodes that need mesh updates
+    std::vector<OctreeNode*> updateQueue;
+
+    // Collect nodes that need updates
+    std::function<void(OctreeNode*)> collectNodes = [&](OctreeNode* node) {
+        if (!node) return;
+
+        if (node->needsUpdate) {
+            updateQueue.push_back(node);
+        }
+
+        if (!node->isLeaf) {
+            for (uint8_t i = 0; i < 8; ++i) {
+                if (node->childMask & (1 << i)) {
+                    collectNodes(node->nodeData.internal.children[i].get());
+                }
+            }
+        }
+    };
+
+    collectNodes(root.get());
+
+    // Sort nodes by distance to viewer (closest first)
+    std::sort(updateQueue.begin(), updateQueue.end(),
+        [&viewerPos](const OctreeNode* a, const OctreeNode* b) {
+            glm::vec3 centerA = glm::vec3(a->position) + glm::vec3(a->size / 2);
+            glm::vec3 centerB = glm::vec3(b->position) + glm::vec3(b->size / 2);
+            float distA = glm::length(centerA - viewerPos);
+            float distB = glm::length(centerB - viewerPos);
+            return distA < distB;
+        });
+
+    // Generate meshes for nodes that need updates
+    for (auto* node : updateQueue) {
+        if (generateMeshForNode(node)) {
+            node->needsUpdate = false;
+        }
+    }
+}
+
+void World::prepareFrame(const Camera& camera) {
+    if (renderer) {
+        renderer->prepareFrame(camera, *this);
+    }
+}
+
+void World::render(VkCommandBuffer commandBuffer) {
+    if (renderer) {
+        renderer->recordCommands(commandBuffer);
+    }
+}
+
+void World::setDebugVisualization(bool enabled) {
+    if (renderer) {
+        renderer->setDebugVisualization(enabled);
+    }
+}
+
+bool World::isDebugVisualizationEnabled() const {
+    return renderer ? renderer->isDebugVisualizationEnabled() : false;
+}
+
+const OctreeNode* World::findNode(const glm::ivec3& pos) const {
+    if (!root) return nullptr;
+
+    const OctreeNode* current = root.get();
+    uint32_t size = 1 << MAX_LEVEL;
+    uint32_t level = 0;
+
+    while (current && !current->isLeaf && level < MAX_LEVEL) {
+        size >>= 1;
+        glm::ivec3 localPos = (pos - current->position) / static_cast<int>(size);
+        uint32_t index = (localPos.x & 1) | ((localPos.y & 1) << 1) | ((localPos.z & 1) << 2);
+
+        if (!(current->childMask & (1 << index))) {
+            return current;
+        }
+
+        current = current->nodeData.internal.children[index].get();
+        level++;
+    }
+
+    return current;
+}
+
+OctreeNode* World::findNode(const glm::ivec3& pos, bool create) {
+    if (!root) return nullptr;
+
+    OctreeNode* current = root.get();
+    uint32_t size = 1 << MAX_LEVEL;
+    uint32_t level = 0;
+
+    while (current && level < MAX_LEVEL) {
+        if (current->isLeaf) {
+            if (create && level < MAX_LEVEL - 1) {
+                subdivideNode(current);
+            } else {
+                return current;
+            }
+        }
+
+        size >>= 1;
+        glm::ivec3 localPos = (pos - current->position) / static_cast<int>(size);
+        uint32_t index = (localPos.x & 1) | ((localPos.y & 1) << 1) | ((localPos.z & 1) << 2);
+
+        if (!(current->childMask & (1 << index))) {
+            if (!create) {
+                return current;
+            }
+
+            // Create new child node
+            auto newNode = std::make_unique<OctreeNode>();
+            newNode->position = current->position + localPos * static_cast<int>(size);
+            newNode->size = size;
+            newNode->level = level + 1;
+            newNode->isLeaf = true;
+
+            current->childMask |= (1 << index);
+            current->nodeData.internal.children[index] = std::move(newNode);
+        }
+
+        current = current->nodeData.internal.children[index].get();
+        level++;
+    }
+
+    return current;
+}
+
+void World::subdivideNode(OctreeNode* node) {
+    if (!node || !node->isLeaf || node->level >= MAX_LEVEL) return;
+
+    // Create child nodes
+    node->isLeaf = false;
+    new (&node->nodeData.internal) InternalData();
+
+    // Calculate child size
+    uint32_t childSize = node->size / 2;
+
+    // Process each voxel in the parent node
+    const auto& leafData = node->nodeData.leaf;
+    size_t voxelIndex = 0;
+
+    for (const auto& run : leafData.runs) {
+        for (uint32_t i = 0; i < run.count; ++i) {
+            // Calculate voxel position within the node
+            uint32_t x = voxelIndex & 1;
+            uint32_t y = (voxelIndex >> 1) & 1;
+            uint32_t z = (voxelIndex >> 2) & 1;
+
+            // Calculate which child this voxel belongs to
+            uint8_t childIndex = (x << 0) | (y << 1) | (z << 2);
+
+            // Create child if it doesn't exist
+            if (!(node->childMask & (1 << childIndex))) {
+                auto child = std::make_unique<OctreeNode>();
+                child->position = node->position + glm::ivec3(
+                    x * childSize,
+                    y * childSize,
+                    z * childSize
+                );
+                child->size = childSize;
+                child->level = node->level + 1;
+                child->isLeaf = true;
+                new (&child->nodeData.leaf) LeafData();
+                
+                node->nodeData.internal.children[childIndex] = std::move(child);
+                node->childMask |= (1 << childIndex);
+            }
+
+            // Add voxel to child
+            node->nodeData.internal.children[childIndex]->nodeData.leaf.addVoxel(run.voxel);
+            node->nodeData.internal.children[childIndex]->needsUpdate = true;
+
+            voxelIndex++;
+        }
+    }
+
+    // Clean up parent's leaf data
+    node->nodeData.leaf.~LeafData();
+}
+
+void World::optimizeNode(OctreeNode* node) {
+    if (!node || node->isLeaf) return;
+
+    // Check if all children are leaves and have the same voxel type
+    bool canOptimize = true;
+    Voxel referenceVoxel{0, 0};
+    bool firstVoxel = true;
+
+    for (uint8_t i = 0; i < 8; ++i) {
+        if (!(node->childMask & (1 << i))) {
+            canOptimize = false;
+            break;
+        }
+
+        auto* child = node->nodeData.internal.children[i].get();
+        if (!child->isLeaf) {
+            canOptimize = false;
+            break;
+        }
+
+        // Check if child has uniform voxels
+        const auto& leafData = child->nodeData.leaf;
+        if (leafData.runs.size() != 1) {
+            canOptimize = false;
+            break;
+        }
+
+        // Compare with reference voxel
+        const auto& voxel = leafData.runs[0].voxel;
+        if (firstVoxel) {
+            referenceVoxel = voxel;
+            firstVoxel = false;
+        } else if (voxel.type != referenceVoxel.type || voxel.color != referenceVoxel.color) {
+            canOptimize = false;
+            break;
+        }
+    }
+
+    if (canOptimize) {
+        // Convert to leaf node with uniform voxel
+        for (uint8_t i = 0; i < 8; ++i) {
+            if (node->childMask & (1 << i)) {
+                node->nodeData.internal.children[i].reset();
+            }
+        }
+
+        node->isLeaf = true;
+        node->childMask = 0;
+        new (&node->nodeData.leaf) LeafData();
+        
+        // Add the reference voxel for the entire node
+        node->nodeData.leaf.addVoxel(referenceVoxel);
+        node->needsUpdate = true;
+        node->isOptimized = true;
+        node->optimizedValue = referenceVoxel.type;
+    } else {
+        // Try to optimize children recursively
+        for (uint8_t i = 0; i < 8; ++i) {
+            if (node->childMask & (1 << i)) {
+                optimizeNode(node->nodeData.internal.children[i].get());
+            }
+        }
+    }
+}
+
+bool World::optimizeNodes() {
+    if (!root) return false;
+
+    std::function<bool(OctreeNode*)> optimizeRecursive = [&](OctreeNode* node) -> bool {
+        if (!node) return false;
+
+        bool optimized = false;
+        if (!node->isLeaf) {
+            // Try to optimize children first
+            for (uint8_t i = 0; i < 8; ++i) {
+                if (node->childMask & (1 << i)) {
+                    optimized |= optimizeRecursive(node->nodeData.internal.children[i].get());
+                }
+            }
+
+            // Try to optimize this node
+            if (!node->isOptimized) {
+                optimizeNode(node);
+                optimized |= node->isOptimized;
+            }
+        }
+
+        return optimized;
+    };
+
+    return optimizeRecursive(root.get());
+}
+
+size_t World::getMemoryUsage() const {
+    return calculateMemoryUsage();
+}
+
+uint32_t World::getNodeCount() const {
+    return static_cast<uint32_t>(countNodes(false));
+}
+
+size_t World::calculateMemoryUsage() const {
+    size_t total = sizeof(World);
+    if (root) {
+        std::function<size_t(const OctreeNode*)> calcNodeMemory = 
+            [&calcNodeMemory](const OctreeNode* node) -> size_t {
+                if (!node) return 0;
+
+                size_t memory = sizeof(OctreeNode);
+                
+                if (node->isLeaf) {
+                    memory += node->nodeData.leaf.runs.capacity() * sizeof(VoxelRun);
+                } else {
+                    for (uint8_t i = 0; i < 8; ++i) {
+                        if (node->childMask & (1 << i)) {
+                            memory += calcNodeMemory(node->nodeData.internal.children[i].get());
+                        }
+                    }
+                }
+
+                return memory;
+            };
+
+        total += calcNodeMemory(root.get());
+    }
+    return total;
+}
+
+size_t World::countNodes(bool activeOnly) const {
+    if (!root) return 0;
+
+    std::function<size_t(const OctreeNode*)> countRecursive = 
+        [activeOnly, &countRecursive](const OctreeNode* node) -> size_t {
+            if (!node) return 0;
+
+            size_t count = 1;
+            if (!node->isLeaf) {
+                for (uint8_t i = 0; i < 8; ++i) {
+                    if (!activeOnly || (node->childMask & (1 << i))) {
+                        count += countRecursive(node->nodeData.internal.children[i].get());
+                    }
+                }
+            }
+            return count;
+        };
+
+    return countRecursive(root.get());
+}
+
+size_t World::countNodesByLevel(uint32_t level) const {
+    if (!root) return 0;
+
+    std::function<size_t(const OctreeNode*)> countRecursive = 
+        [level, &countRecursive](const OctreeNode* node) -> size_t {
+            if (!node) return 0;
+
+            size_t count = (node->level == level) ? 1 : 0;
+            if (!node->isLeaf) {
+                for (uint8_t i = 0; i < 8; ++i) {
+                    if (node->childMask & (1 << i)) {
+                        count += countRecursive(node->nodeData.internal.children[i].get());
+                    }
+                }
+            }
+            return count;
+        };
+
+    return countRecursive(root.get());
+}
+
+bool World::createComputePipeline() {
+    std::cout << "World: Creating compute pipeline..." << std::endl;
+    
+    // Create descriptor set layout
+    VkDescriptorSetLayoutBinding bindings[3] = {};
+    
+    // Binding 0: Input voxel data (storage buffer)
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    
+    // Binding 1: Output mesh data (storage buffer)
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 2: Counter buffer (storage buffer)
+    bindings[2].binding = 2;
+    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[2].descriptorCount = 1;
+    bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 3;
+    layoutInfo.pBindings = bindings;
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+        std::cerr << "World: Failed to create descriptor set layout" << std::endl;
+        return false;
+    }
+    
+    // Create descriptor pool
+    VkDescriptorPoolSize poolSizes[3] = {};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[0].descriptorCount = 100; // Adjust based on max concurrent nodes
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[1].descriptorCount = 100;
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[2].descriptorCount = 100;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = 100; // Adjust based on max concurrent nodes
+    poolInfo.poolSizeCount = 3;
+    poolInfo.pPoolSizes = poolSizes;
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+        std::cerr << "World: Failed to create descriptor pool" << std::endl;
+        return false;
+    }
+    
+    // Create push constant range
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(glm::ivec3) + 3 * sizeof(uint32_t); // nodePosition, nodeSize, maxVertices, maxIndices
+
+    // Create pipeline layout
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+        std::cerr << "World: Failed to create pipeline layout" << std::endl;
+        return false;
+    }
+    
+    // Create shader module
+    std::vector<char> shaderCode;
+    try {
+    std::ifstream file("shaders/mesh_generator.comp.spv", std::ios::ate | std::ios::binary);
+    if (!file.is_open()) {
+            std::cerr << "World: Failed to open compute shader file" << std::endl;
+        return false;
+    }
+    
+    size_t fileSize = (size_t)file.tellg();
+        shaderCode.resize(fileSize);
+    file.seekg(0);
+    file.read(shaderCode.data(), fileSize);
+    file.close();
+    } catch (const std::exception& e) {
+        std::cerr << "World: Failed to read compute shader file: " << e.what() << std::endl;
+        return false;
+    }
+    
+    VkShaderModuleCreateInfo shaderCreateInfo{};
+    shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shaderCreateInfo.codeSize = shaderCode.size();
+    shaderCreateInfo.pCode = reinterpret_cast<const uint32_t*>(shaderCode.data());
+
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(device, &shaderCreateInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        std::cerr << "World: Failed to create shader module" << std::endl;
+        return false;
+    }
+    
+    // Create compute pipeline
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    pipelineInfo.stage.module = shaderModule;
+    pipelineInfo.stage.pName = "main";
+    pipelineInfo.layout = pipelineLayout;
+    
+    if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &computePipeline) != VK_SUCCESS) {
+        std::cerr << "World: Failed to create compute pipeline" << std::endl;
+        vkDestroyShaderModule(device, shaderModule, nullptr);
+        return false;
+    }
+    
+    // Clean up shader module
+    vkDestroyShaderModule(device, shaderModule, nullptr);
+
+    // Create command pool for compute commands
+    VkCommandPoolCreateInfo commandPoolInfo{};
+    commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    commandPoolInfo.queueFamilyIndex = findComputeQueueFamily(physicalDevice);
+
+    if (vkCreateCommandPool(device, &commandPoolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+        std::cerr << "World: Failed to create command pool" << std::endl;
+        return false;
+    }
+
+    // Get compute queue
+    vkGetDeviceQueue(device, findComputeQueueFamily(physicalDevice), 0, &computeQueue);
+
+    std::cout << "World: Compute pipeline created successfully" << std::endl;
+    return true;
+}
+
+uint32_t World::findComputeQueueFamily(VkPhysicalDevice physicalDevice) {
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
+
+    for (uint32_t i = 0; i < queueFamilyCount; i++) {
+        if (queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("Failed to find compute queue family");
+}
+
+bool World::generateMeshForNode(OctreeNode* node) {
+    if (!node || !node->isLeaf) return false;
+
+    // Temporary vectors to store mesh data
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+
+    // Reserve space to avoid reallocations
+    vertices.reserve(24); // 24 vertices per cube (4 per face * 6 faces)
+    indices.reserve(36);  // 36 indices per cube (6 per face * 6 faces)
+
+    // Get the voxel data for this node
+    const auto& leafData = node->nodeData.leaf;
+    size_t voxelIndex = 0;
+
+    // Process each voxel run
+    for (const auto& run : leafData.runs) {
+        // Skip empty (air) voxels
+        if (run.voxel.type == 0) {
+            voxelIndex += run.count;
+            continue;
+        }
+
+        // Process each voxel in the run
+        for (uint32_t i = 0; i < run.count; ++i) {
+            // Calculate voxel position within the node
+            uint32_t x = voxelIndex & 1;
+            uint32_t y = (voxelIndex >> 1) & 1;
+            uint32_t z = (voxelIndex >> 2) & 1;
+
+            // Add cube to mesh at the calculated position
+            size_t currentVertexCount = vertices.size();
+            addCubeToMesh(vertices, indices, run.voxel);
+
+            // Transform vertices to world space
+            for (size_t v = currentVertexCount; v < vertices.size(); ++v) {
+                vertices[v].pos += glm::vec3(
+                    node->position.x + x * node->size,
+                    node->position.y + y * node->size,
+                    node->position.z + z * node->size
+                );
+            }
+
+            voxelIndex++;
+        }
+    }
+
+    // If no vertices were generated, clean up any existing mesh data
+    if (vertices.empty()) {
+        auto it = meshes.find(node);
+        if (it != meshes.end()) {
+            cleanupMeshData(it->second);
+            meshes.erase(it);
+        }
+        return true;
+    }
+
+    // Create buffers for the mesh data
+    return createMeshBuffers(node, vertices, indices);
+}
+
+void World::addCubeToMesh(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices, const Voxel& voxel) {
+    // Extract color components from the packed color
+    float r = ((voxel.color >> 24) & 0xFF) / 255.0f;
+    float g = ((voxel.color >> 16) & 0xFF) / 255.0f;
+    float b = ((voxel.color >> 8) & 0xFF) / 255.0f;
+    float a = (voxel.color & 0xFF) / 255.0f;
+    glm::vec3 color(r, g, b);
+
+    // Vertex positions for a unit cube
+    const std::array<glm::vec3, 8> positions = {{
+        {0.0f, 0.0f, 0.0f}, // 0: left-bottom-back
+        {1.0f, 0.0f, 0.0f}, // 1: right-bottom-back
+        {1.0f, 1.0f, 0.0f}, // 2: right-top-back
+        {0.0f, 1.0f, 0.0f}, // 3: left-top-back
+        {0.0f, 0.0f, 1.0f}, // 4: left-bottom-front
+        {1.0f, 0.0f, 1.0f}, // 5: right-bottom-front
+        {1.0f, 1.0f, 1.0f}, // 6: right-top-front
+        {0.0f, 1.0f, 1.0f}  // 7: left-top-front
+    }};
+
+    // Normal vectors for each face
+    const std::array<glm::vec3, 6> normals = {{
+        {0.0f, 0.0f, -1.0f}, // Back
+        {0.0f, 0.0f, 1.0f},  // Front
+        {-1.0f, 0.0f, 0.0f}, // Left
+        {1.0f, 0.0f, 0.0f},  // Right
+        {0.0f, -1.0f, 0.0f}, // Bottom
+        {0.0f, 1.0f, 0.0f}   // Top
+    }};
+
+    // Face definitions (clockwise winding)
+    const std::array<std::array<uint32_t, 4>, 6> faces = {{
+        {{0, 1, 2, 3}}, // Back
+        {{4, 7, 6, 5}}, // Front
+        {{0, 3, 7, 4}}, // Left
+        {{1, 5, 6, 2}}, // Right
+        {{0, 4, 5, 1}}, // Bottom
+        {{3, 2, 6, 7}}  // Top
+    }};
+
+    // Add vertices and indices for each face
+    uint32_t baseIndex = static_cast<uint32_t>(vertices.size());
+    for (size_t f = 0; f < faces.size(); ++f) {
+        const auto& face = faces[f];
+        const auto& normal = normals[f];
+
+        // Add four vertices for this face
+        for (uint32_t v = 0; v < 4; ++v) {
+            Vertex vertex;
+            vertex.pos = positions[face[v]];
+            vertex.color = voxel.color; // Use the original packed color
+            vertices.push_back(vertex);
+        }
+
+        // Add indices for two triangles (6 indices)
+        indices.push_back(baseIndex);
+        indices.push_back(baseIndex + 1);
+        indices.push_back(baseIndex + 2);
+        indices.push_back(baseIndex);
+        indices.push_back(baseIndex + 2);
+        indices.push_back(baseIndex + 3);
+
+        baseIndex += 4;
+    }
+}
+
+bool World::createMeshBuffers(OctreeNode* node, const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
+    // Clean up any existing mesh data for this node
+    auto it = meshes.find(node);
+    if (it != meshes.end()) {
+        cleanupMeshData(it->second);
+    }
+
+    MeshData meshData{};
+
+    // Create staging buffers
+    VkBuffer stagingVertexBuffer;
+    VkDeviceMemory stagingVertexMemory;
+    VkBuffer stagingIndexBuffer;
+    VkDeviceMemory stagingIndexMemory;
+
+    VkDeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
+    VkDeviceSize indexBufferSize = sizeof(indices[0]) * indices.size();
+
+    // Create staging vertex buffer
+    if (!createBuffer(
+        vertexBufferSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        stagingVertexBuffer,
+        stagingVertexMemory)) {
+        return false;
+    }
+
+    // Create staging index buffer
+    if (!createBuffer(
+        indexBufferSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        stagingIndexBuffer,
+        stagingIndexMemory)) {
+        vkDestroyBuffer(device, stagingVertexBuffer, nullptr);
+        vkFreeMemory(device, stagingVertexMemory, nullptr);
+        return false;
+    }
+
+    // Map and copy vertex data
+    void* data;
+    vkMapMemory(device, stagingVertexMemory, 0, vertexBufferSize, 0, &data);
+    memcpy(data, vertices.data(), vertexBufferSize);
+    vkUnmapMemory(device, stagingVertexMemory);
+
+    // Map and copy index data
+    vkMapMemory(device, stagingIndexMemory, 0, indexBufferSize, 0, &data);
+    memcpy(data, indices.data(), indexBufferSize);
+    vkUnmapMemory(device, stagingIndexMemory);
+
+    // Create device local buffers
+    if (!createBuffer(
+        vertexBufferSize,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        meshData.vertexBuffer,
+        meshData.vertexMemory)) {
+        vkDestroyBuffer(device, stagingVertexBuffer, nullptr);
+        vkFreeMemory(device, stagingVertexMemory, nullptr);
+        vkDestroyBuffer(device, stagingIndexBuffer, nullptr);
+        vkFreeMemory(device, stagingIndexMemory, nullptr);
+        return false;
+    }
+
+    if (!createBuffer(
+        indexBufferSize,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        meshData.indexBuffer,
+        meshData.indexMemory)) {
+        cleanupMeshData(meshData);
+        vkDestroyBuffer(device, stagingVertexBuffer, nullptr);
+        vkFreeMemory(device, stagingVertexMemory, nullptr);
+        vkDestroyBuffer(device, stagingIndexBuffer, nullptr);
+        vkFreeMemory(device, stagingIndexMemory, nullptr);
+        return false;
+    }
+
+    // Copy buffers
+    copyBuffer(stagingVertexBuffer, meshData.vertexBuffer, vertexBufferSize);
+    copyBuffer(stagingIndexBuffer, meshData.indexBuffer, indexBufferSize);
+
+    // Cleanup staging buffers
+    vkDestroyBuffer(device, stagingVertexBuffer, nullptr);
+    vkFreeMemory(device, stagingVertexMemory, nullptr);
+    vkDestroyBuffer(device, stagingIndexBuffer, nullptr);
+    vkFreeMemory(device, stagingIndexMemory, nullptr);
+
+    // Store counts
+    meshData.vertexCount = static_cast<uint32_t>(vertices.size());
+    meshData.indexCount = static_cast<uint32_t>(indices.size());
+
+    // Store or update mesh data
+    meshes[node] = meshData;
+
+    return true;
+}
+
+void World::cleanupMeshData(MeshData& meshData) {
+    if (meshData.vertexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, meshData.vertexBuffer, nullptr);
+        meshData.vertexBuffer = VK_NULL_HANDLE;
+    }
+    if (meshData.vertexMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, meshData.vertexMemory, nullptr);
+        meshData.vertexMemory = VK_NULL_HANDLE;
+    }
+    if (meshData.indexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, meshData.indexBuffer, nullptr);
+        meshData.indexBuffer = VK_NULL_HANDLE;
+    }
+    if (meshData.indexMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, meshData.indexMemory, nullptr);
+        meshData.indexMemory = VK_NULL_HANDLE;
+    }
+    meshData.vertexCount = 0;
+    meshData.indexCount = 0;
+}
+
+void World::update() {
+    // Update LOD based on camera position
+    if (renderer) {
+        const Camera* camera = renderer->getCamera();
+        if (camera) {
+            glm::vec3 viewerPos = camera->getPosition();
+            updateLOD(viewerPos);
+            generateMeshes(viewerPos);
+        }
+    }
+
+    // Optimize nodes if needed
+    optimizeNodes();
+}
+
+bool World::createBuffer(uint64_t size, uint32_t usage, uint32_t properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+        std::cerr << "World: Failed to create buffer" << std::endl;
+        return false;
+    }
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+        std::cerr << "World: Failed to allocate buffer memory" << std::endl;
+        vkDestroyBuffer(device, buffer, nullptr);
+        return false;
+    }
+
+    if (vkBindBufferMemory(device, buffer, bufferMemory, 0) != VK_SUCCESS) {
+        std::cerr << "World: Failed to bind buffer memory" << std::endl;
+        vkDestroyBuffer(device, buffer, nullptr);
+        vkFreeMemory(device, bufferMemory, nullptr);
+        return false;
+    }
+
+    return true;
+}
+
+void World::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, uint64_t size) {
+    // Create command buffer for transfer
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = commandPool;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer commandBuffer;
+    if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
+        std::cerr << "World: Failed to allocate command buffer for buffer copy" << std::endl;
+        return;
+    }
+
+    // Begin command buffer
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+    // Copy buffer
+    VkBufferCopy copyRegion{};
+    copyRegion.srcOffset = 0;
+    copyRegion.dstOffset = 0;
+    copyRegion.size = size;
+    vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+    vkEndCommandBuffer(commandBuffer);
+
+    // Submit command buffer
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+
+    // Create fence to ensure copy completes before function returns
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    
+    VkFence fence;
+    if (vkCreateFence(device, &fenceInfo, nullptr, &fence) != VK_SUCCESS) {
+        std::cerr << "World: Failed to create fence for buffer copy" << std::endl;
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        return;
+    }
+
+    // Submit and wait
+    if (vkQueueSubmit(computeQueue, 1, &submitInfo, fence) != VK_SUCCESS) {
+        std::cerr << "World: Failed to submit buffer copy command" << std::endl;
+        vkDestroyFence(device, fence, nullptr);
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        return;
+    }
+
+    vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+
+    // Cleanup
+    vkDestroyFence(device, fence, nullptr);
+    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+}
+
+uint32_t World::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        if ((typeFilter & (1 << i)) && 
+            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("Failed to find suitable memory type");
+}
+
+} // namespace voxceleron 

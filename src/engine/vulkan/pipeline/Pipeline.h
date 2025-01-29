@@ -1,61 +1,91 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vector>   
+#include <memory>
 #include <string>
-#include <vector>
+#include <fstream>
+#include <array>
+#include "../core/Vertex.h"
+#include "../core/VulkanContext.h"
+#include "../core/SwapChain.h"
 
 namespace voxceleron {
 
 class VulkanContext;
 class SwapChain;
+class Window;
 
 class Pipeline {
 public:
+    enum class State {
+        UNINITIALIZED,
+        READY,
+        ERROR,
+        RECREATING
+    };
+
     Pipeline(VulkanContext* context, SwapChain* swapChain);
     ~Pipeline();
 
     bool initialize();
     void cleanup();
-    
-    // Rendering functions
+
+    // Frame management
     bool beginFrame();
-    void endFrame();
-    bool recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+    bool endFrame();
+    bool recreateIfNeeded();
+    void waitIdle();
 
     // Getters
-    VkPipeline getHandle() const { return graphicsPipeline; }
-    VkPipelineLayout getLayout() const { return pipelineLayout; }
-    VkRenderPass getRenderPass() const { return renderPass; }
+    VkCommandBuffer getCurrentCommandBuffer() const;
+    uint32_t getCurrentImageIndex() const { return currentImageIndex; }
+    State getState() const { return state; }
+    bool isValid() const { return state == State::READY; }
+    const std::string& getLastErrorMessage() const { return lastErrorMessage; }
 
 private:
     VulkanContext* context;
     SwapChain* swapChain;
+    Window* window;
 
+    // Pipeline resources
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
     VkRenderPass renderPass;
     std::vector<VkFramebuffer> framebuffers;
-    
-    // Command buffers
-    VkCommandPool commandPool;
+
+    // Command buffers and synchronization
+    std::vector<VkCommandPool> commandPools;
     std::vector<VkCommandBuffer> commandBuffers;
-    
-    // Synchronization objects
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> inFlightFences;
+    VkPipelineStageFlags waitStageFlags;
+    
+    // Frame state
     uint32_t currentFrame;
+    uint32_t currentImageIndex;
+    State state;
+    std::string lastErrorMessage;
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+
+    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
 
     // Helper functions
     bool createRenderPass();
     bool createGraphicsPipeline();
     bool createFramebuffers();
-    bool createCommandPool();
+    bool createCommandPools();
     bool createCommandBuffers();
     bool createSyncObjects();
-    std::vector<char> readFile(const std::string& filename);
+    bool createVertexBuffer();
+    void setError(const std::string& message) { lastErrorMessage = message; state = State::ERROR; }
+
+    // Helper functions for shader handling
     VkShaderModule createShaderModule(const std::vector<char>& code);
+    std::vector<char> readFile(const std::string& filename);
 
     // Prevent copying
     Pipeline(const Pipeline&) = delete;

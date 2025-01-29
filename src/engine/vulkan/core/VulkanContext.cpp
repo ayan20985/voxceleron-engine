@@ -12,7 +12,9 @@ VulkanContext::VulkanContext()
     , device(VK_NULL_HANDLE)
     , graphicsQueue(VK_NULL_HANDLE)
     , presentQueue(VK_NULL_HANDLE)
-    , surface(VK_NULL_HANDLE) {
+    , surface(VK_NULL_HANDLE)
+    , commandPool(VK_NULL_HANDLE)
+    , enableValidationLayers(true) {
     std::cout << "Vulkan: Creating Vulkan context" << std::endl;
 }
 
@@ -22,79 +24,88 @@ VulkanContext::~VulkanContext() {
 }
 
 bool VulkanContext::initialize(Window* window) {
-    std::cout << "Vulkan: Starting initialization..." << std::endl;
+    std::cout << "VulkanContext: Starting initialization..." << std::endl;
 
     if (!createInstance()) {
-        std::cerr << "Vulkan: Failed to create instance!" << std::endl;
+        std::cerr << "VulkanContext: Failed to create instance!" << std::endl;
         return false;
     }
-    std::cout << "Vulkan: Instance created successfully" << std::endl;
+    std::cout << "VulkanContext: Created instance: " << instance << std::endl;
 
     if (enableValidationLayers && !setupDebugMessenger()) {
-        std::cerr << "Vulkan: Failed to set up debug messenger!" << std::endl;
+        std::cerr << "VulkanContext: Failed to setup debug messenger!" << std::endl;
         return false;
     }
-    if (enableValidationLayers) {
-        std::cout << "Vulkan: Debug messenger set up successfully" << std::endl;
-    }
+    std::cout << "VulkanContext: Setup debug messenger" << std::endl;
 
+    // Create surface after instance is created
     if (!createSurface(window)) {
-        std::cerr << "Vulkan: Failed to create surface!" << std::endl;
+        std::cerr << "VulkanContext: Failed to create surface!" << std::endl;
         return false;
     }
-    std::cout << "Vulkan: Surface created successfully" << std::endl;
+    std::cout << "VulkanContext: Created surface: " << surface << std::endl;
 
     if (!pickPhysicalDevice()) {
-        std::cerr << "Vulkan: Failed to find a suitable GPU!" << std::endl;
+        std::cerr << "VulkanContext: Failed to find a suitable GPU!" << std::endl;
         return false;
     }
-    std::cout << "Vulkan: Physical device selected successfully" << std::endl;
+    std::cout << "VulkanContext: Selected physical device" << std::endl;
 
     if (!createLogicalDevice()) {
-        std::cerr << "Vulkan: Failed to create logical device!" << std::endl;
+        std::cerr << "VulkanContext: Failed to create logical device!" << std::endl;
         return false;
     }
-    std::cout << "Vulkan: Logical device created successfully" << std::endl;
+    std::cout << "VulkanContext: Created logical device" << std::endl;
 
-    std::cout << "Vulkan: Initialization complete" << std::endl;
+    if (!createCommandPool()) {
+        std::cerr << "VulkanContext: Failed to create command pool!" << std::endl;
+        return false;
+    }
+    std::cout << "VulkanContext: Created command pool" << std::endl;
+
+    std::cout << "VulkanContext: Initialization complete" << std::endl;
     return true;
 }
 
 void VulkanContext::cleanup() {
-    std::cout << "Vulkan: Starting cleanup..." << std::endl;
-
     if (device != VK_NULL_HANDLE) {
-        std::cout << "Vulkan: Destroying logical device" << std::endl;
+        vkDeviceWaitIdle(device);
+
+        // Destroy command pool first
+        if (commandPool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(device, commandPool, nullptr);
+            commandPool = VK_NULL_HANDLE;
+        }
+
+        // Destroy device
         vkDestroyDevice(device, nullptr);
         device = VK_NULL_HANDLE;
     }
 
-    if (surface != VK_NULL_HANDLE) {
-        std::cout << "Vulkan: Destroying surface" << std::endl;
+    // Destroy surface after device
+    if (instance != VK_NULL_HANDLE && surface != VK_NULL_HANDLE) {
         vkDestroySurfaceKHR(instance, surface, nullptr);
         surface = VK_NULL_HANDLE;
     }
 
-    if (enableValidationLayers && debugMessenger != VK_NULL_HANDLE) {
-        std::cout << "Vulkan: Destroying debug messenger" << std::endl;
+    // Destroy debug messenger
+    if (instance != VK_NULL_HANDLE && debugMessenger != VK_NULL_HANDLE) {
         auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-        if (func != nullptr) {
+        if (func) {
             func(instance, debugMessenger, nullptr);
         }
         debugMessenger = VK_NULL_HANDLE;
     }
 
+    // Destroy instance last
     if (instance != VK_NULL_HANDLE) {
-        std::cout << "Vulkan: Destroying instance" << std::endl;
         vkDestroyInstance(instance, nullptr);
         instance = VK_NULL_HANDLE;
     }
-
-    std::cout << "Vulkan: Cleanup complete" << std::endl;
 }
 
 bool VulkanContext::createInstance() {
-    std::cout << "Vulkan: Creating instance..." << std::endl;
+    std::cout << "VulkanContext: Creating instance..." << std::endl;
 
     // Application info
     VkApplicationInfo appInfo{};
@@ -119,7 +130,7 @@ bool VulkanContext::createInstance() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
-    std::cout << "Vulkan: Required extensions:" << std::endl;
+    std::cout << "VulkanContext: Required extensions:" << std::endl;
     for (const auto& extension : extensions) {
         std::cout << "  - " << extension << std::endl;
     }
@@ -129,7 +140,7 @@ bool VulkanContext::createInstance() {
 
     // Validation layers
     if (enableValidationLayers) {
-        std::cout << "Vulkan: Enabling validation layers:" << std::endl;
+        std::cout << "VulkanContext: Enabling validation layers:" << std::endl;
         for (const auto& layer : validationLayers) {
             std::cout << "  - " << layer << std::endl;
         }
@@ -140,11 +151,13 @@ bool VulkanContext::createInstance() {
     }
 
     // Create instance
-    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
-        std::cerr << "Vulkan: Failed to create instance!" << std::endl;
+    VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
+    if (result != VK_SUCCESS) {
+        std::cerr << "VulkanContext: Failed to create instance! Error code: " << result << std::endl;
         return false;
     }
 
+    std::cout << "VulkanContext: Created instance successfully: " << instance << std::endl;
     return true;
 }
 
@@ -322,13 +335,119 @@ bool VulkanContext::createLogicalDevice() {
 }
 
 bool VulkanContext::createSurface(Window* window) {
-    std::cout << "Vulkan: Creating surface..." << std::endl;
+    std::cout << "VulkanContext: Creating surface..." << std::endl;
     
     if (glfwCreateWindowSurface(instance, window->getHandle(), nullptr, &surface) != VK_SUCCESS) {
-        std::cerr << "Vulkan: Failed to create window surface!" << std::endl;
+        std::cerr << "VulkanContext: Failed to create window surface!" << std::endl;
         return false;
     }
+
+    std::cout << "VulkanContext: Created surface successfully: " << surface << std::endl;
     return true;
+}
+
+bool VulkanContext::createCommandPool() {
+    std::cout << "VulkanContext: Creating command pool..." << std::endl;
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+        std::cerr << "VulkanContext: Failed to create command pool!" << std::endl;
+        return false;
+    }
+
+    std::cout << "VulkanContext: Created command pool successfully" << std::endl;
+    return true;
+}
+
+VkCommandBuffer VulkanContext::beginSingleTimeCommands() {
+    std::cout << "VulkanContext: Beginning single time commands..." << std::endl;
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = commandPool;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer commandBuffer;
+    if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
+        std::cerr << "VulkanContext: Failed to allocate command buffer!" << std::endl;
+        return VK_NULL_HANDLE;
+    }
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+        std::cerr << "VulkanContext: Failed to begin command buffer!" << std::endl;
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        return VK_NULL_HANDLE;
+    }
+
+    std::cout << "VulkanContext: Command buffer ready for recording" << std::endl;
+    return commandBuffer;
+}
+
+bool VulkanContext::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
+    std::cout << "VulkanContext: Ending single time commands..." << std::endl;
+
+    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+        std::cerr << "VulkanContext: Failed to end command buffer!" << std::endl;
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        return false;
+    }
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+
+    VkFence fence;
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+    if (vkCreateFence(device, &fenceInfo, nullptr, &fence) != VK_SUCCESS) {
+        std::cerr << "VulkanContext: Failed to create fence!" << std::endl;
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        return false;
+    }
+
+    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, fence) != VK_SUCCESS) {
+        std::cerr << "VulkanContext: Failed to submit command buffer!" << std::endl;
+        vkDestroyFence(device, fence, nullptr);
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        return false;
+    }
+
+    if (vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+        std::cerr << "VulkanContext: Failed to wait for fence!" << std::endl;
+        vkDestroyFence(device, fence, nullptr);
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        return false;
+    }
+
+    vkDestroyFence(device, fence, nullptr);
+    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+
+    std::cout << "VulkanContext: Command buffer executed successfully" << std::endl;
+    return true;
+}
+
+uint32_t VulkanContext::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("VulkanContext: Failed to find suitable memory type!");
 }
 
 } // namespace voxceleron 

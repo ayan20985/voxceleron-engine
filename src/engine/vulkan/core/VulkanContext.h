@@ -1,6 +1,7 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 #include <vector>
 #include <optional>
 
@@ -27,6 +28,13 @@ public:
     
     // Cleanup Vulkan resources
     void cleanup();
+
+    // Command buffer management
+    VkCommandBuffer beginSingleTimeCommands();
+    bool endSingleTimeCommands(VkCommandBuffer commandBuffer);
+
+    // Memory management
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     // Getters
     VkInstance getInstance() const { return instance; }
@@ -55,12 +63,16 @@ private:
     // Surface
     VkSurfaceKHR surface;
 
+    // Command pool
+    VkCommandPool commandPool;
+
     // Helper functions
     bool createInstance();
     bool setupDebugMessenger();
     bool pickPhysicalDevice();
     bool createLogicalDevice();
     bool createSurface(Window* window);
+    bool createCommandPool();
     
     // Validation layers
     const std::vector<const char*> validationLayers = {

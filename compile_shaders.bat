@@ -1,8 +1,10 @@
 @echo off
 echo Compiling shaders...
 
-%VULKAN_SDK%\Bin\glslc.exe shaders/basic.vert -o shaders/basic.vert.spv
-%VULKAN_SDK%\Bin\glslc.exe shaders/basic.frag -o shaders/basic.frag.spv
+REM Create shaders directory if it doesn't exist
+if not exist "shaders" mkdir shaders
 
-echo Shader compilation complete.
-pause 
+REM Compile compute shader
+%VULKAN_SDK%\Bin\glslc.exe shaders/mesh_generator.comp -o shaders/mesh_generator.comp.spv
+
+echo Done. 

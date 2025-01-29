@@ -1,0 +1,212 @@
+#version 450
+#extension GL_EXT_nonuniform_qualifier : require
+
+// Allow dynamic workgroup size
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    ivec3 nodePosition;
+    uint nodeSize;
+    uint maxVertices;
+    uint maxIndices;
+    uint lodLevel;
+    float lodTransitionFactor;
+} pc;
+
+// Input voxel data
+layout(std430, binding = 0) readonly buffer VoxelBuffer {
+    uint data[];
+} voxels;
+
+// Output mesh data
+layout(std430, binding = 1) buffer MeshBuffer {
+    // Vertex data: [pos.xyz, normal.xyz, uv.xy, lodBlend]
+    float data[];
+} vertices;
+
+layout(std430, binding = 2) buffer IndexBuffer {
+    uint data[];
+} indices;
+
+// Atomic counter for vertex and index counts
+layout(std430, binding = 3) buffer CounterBuffer {
+    uint vertexCounter;
+    uint indexCounter;
+} counters;
+
+// Shared memory for greedy meshing
+shared uint s_voxelMask[64][64];  // For storing face masks during greedy meshing
+shared uint s_mergeFlags[64][64]; // For tracking merged faces
+
+// Constants
+const float VERTEX_STRIDE = 9.0;  // 9 floats per vertex (pos.xyz, normal.xyz, uv.xy, lodBlend)
+const uint VOXEL_TYPE_MASK = 0xFF;
+const uint VOXEL_COLOR_MASK = 0xFFFFFF00;
+const uint VOXEL_COLOR_SHIFT = 8;
+const uint MAX_GREEDY_SIZE = 32;  // Maximum size for greedy merging
+
+// Helper functions
+bool isVoxelSolid(ivec3 pos) {
+    if (pos.x < 0 || pos.y < 0 || pos.z < 0 || 
+        pos.x >= int(pc.nodeSize) || pos.y >= int(pc.nodeSize) || pos.z >= int(pc.nodeSize)) {
+        return false;
+    }
+    uint index = pos.x + pos.y * pc.nodeSize + pos.z * pc.nodeSize * pc.nodeSize;
+    return (voxels.data[index] & VOXEL_TYPE_MASK) != 0;
+}
+
+vec3 getVoxelColor(ivec3 pos) {
+    uint index = pos.x + pos.y * pc.nodeSize + pos.z * pc.nodeSize * pc.nodeSize;
+    uint color = (voxels.data[index] & VOXEL_COLOR_MASK) >> VOXEL_COLOR_SHIFT;
+    return vec3(
+        float((color >> 16) & 0xFF) / 255.0,
+        float((color >> 8) & 0xFF) / 255.0,
+        float(color & 0xFF) / 255.0
+    );
+}
+
+// Add a vertex to the mesh with LOD blending
+uint addVertex(vec3 pos, vec3 normal, vec2 uv, vec3 color, float lodBlend) {
+    uint index = atomicAdd(counters.vertexCounter, 1);
+    if (index >= pc.maxVertices) return 0;
+
+    uint offset = index * uint(VERTEX_STRIDE);
+    vertices.data[offset + 0] = pos.x;
+    vertices.data[offset + 1] = pos.y;
+    vertices.data[offset + 2] = pos.z;
+    vertices.data[offset + 3] = normal.x;
+    vertices.data[offset + 4] = normal.y;
+    vertices.data[offset + 5] = normal.z;
+    vertices.data[offset + 6] = uv.x;
+    vertices.data[offset + 7] = uv.y;
+    vertices.data[offset + 8] = lodBlend;
+    return index;
+}
+
+void addTriangle(uint v1, uint v2, uint v3) {
+    uint index = atomicAdd(counters.indexCounter, 3);
+    if (index + 2 >= pc.maxIndices) return;
+
+    indices.data[index + 0] = v1;
+    indices.data[index + 1] = v2;
+    indices.data[index + 2] = v3;
+}
+
+// Greedy meshing for a face
+void generateGreedyFace(ivec3 startPos, vec3 normal, int faceAxis, int uAxis, int vAxis) {
+    // Initialize shared memory
+    if (gl_LocalInvocationIndex == 0) {
+        for (int i = 0; i < 64; i++)
+            for (int j = 0; j < 64; j++) {
+                s_voxelMask[i][j] = 0;
+                s_mergeFlags[i][j] = 0;
+            }
+    }
+    barrier();
+
+    // Map voxel faces to 2D grid
+    ivec3 pos = startPos;
+    int u = int(gl_LocalInvocationID.x);
+    int v = int(gl_LocalInvocationID.y);
+    
+    if (u < int(pc.nodeSize) && v < int(pc.nodeSize)) {
+        pos[uAxis] = u;
+        pos[vAxis] = v;
+        
+        bool isFaceVisible = isVoxelSolid(pos) && !isVoxelSolid(pos + ivec3(normal));
+        s_voxelMask[u][v] = isFaceVisible ? 1 : 0;
+    }
+    barrier();
+
+    // Greedy merge algorithm
+    if (gl_LocalInvocationIndex == 0) {
+        for (uint u = 0; u < pc.nodeSize; u++) {
+            for (uint v = 0; v < pc.nodeSize; v++) {
+                if (s_voxelMask[u][v] == 1 && s_mergeFlags[u][v] == 0) {
+                    // Find maximum rectangle size
+                    uint width = 1;
+                    uint height = 1;
+                    
+                    // Expand width
+                    while (width < MAX_GREEDY_SIZE && u + width < pc.nodeSize) {
+                        bool canExpand = true;
+                        for (uint h = 0; h < height; h++) {
+                            if (s_voxelMask[u + width][v + h] == 0 || s_mergeFlags[u + width][v + h] == 1) {
+                                canExpand = false;
+                                break;
+                            }
+                        }
+                        if (!canExpand) break;
+                        width++;
+                    }
+                    
+                    // Expand height
+                    while (height < MAX_GREEDY_SIZE && v + height < pc.nodeSize) {
+                        bool canExpand = true;
+                        for (uint w = 0; w < width; w++) {
+                            if (s_voxelMask[u + w][v + height] == 0 || s_mergeFlags[u + w][v + height] == 1) {
+                                canExpand = false;
+                                break;
+                            }
+                        }
+                        if (!canExpand) break;
+                        height++;
+                    }
+                    
+                    // Mark merged faces
+                    for (uint w = 0; w < width; w++)
+                        for (uint h = 0; h < height; h++)
+                            s_mergeFlags[u + w][v + h] = 1;
+                    
+                    // Generate vertices for merged face
+                    vec3 worldPos = vec3(pc.nodePosition + startPos);
+                    worldPos[uAxis] = float(pc.nodePosition[uAxis]) + float(u);
+                    worldPos[vAxis] = float(pc.nodePosition[vAxis]) + float(v);
+                    
+                    vec3 color = getVoxelColor(pos);
+                    float lodBlend = clamp(pc.lodTransitionFactor * (pc.lodLevel + 1), 0.0, 1.0);
+                    
+                    // Create quad vertices
+                    vec3 size = vec3(0.0);
+                    size[uAxis] = float(width);
+                    size[vAxis] = float(height);
+                    
+                    uint v0 = addVertex(worldPos, normal, vec2(0, 0), color, lodBlend);
+                    uint v1 = addVertex(worldPos + size * vec3(1, 0, 0), normal, vec2(1, 0), color, lodBlend);
+                    uint v2 = addVertex(worldPos + size * vec3(1, 1, 0), normal, vec2(1, 1), color, lodBlend);
+                    uint v3 = addVertex(worldPos + size * vec3(0, 1, 0), normal, vec2(0, 1), color, lodBlend);
+                    
+                    // Add triangles
+                    addTriangle(v0, v1, v2);
+                    addTriangle(v0, v2, v3);
+                }
+            }
+        }
+    }
+    barrier();
+}
+
+void main() {
+    // Process each face direction using greedy meshing
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+    if (pos.x >= int(pc.nodeSize) || pos.y >= int(pc.nodeSize) || pos.z >= int(pc.nodeSize)) return;
+
+    // Front face (+Z)
+    generateGreedyFace(pos, vec3(0, 0, 1), 2, 0, 1);
+    
+    // Back face (-Z)
+    generateGreedyFace(pos, vec3(0, 0, -1), 2, 0, 1);
+    
+    // Right face (+X)
+    generateGreedyFace(pos, vec3(1, 0, 0), 0, 1, 2);
+    
+    // Left face (-X)
+    generateGreedyFace(pos, vec3(-1, 0, 0), 0, 1, 2);
+    
+    // Top face (+Y)
+    generateGreedyFace(pos, vec3(0, 1, 0), 1, 0, 2);
+    
+    // Bottom face (-Y)
+    generateGreedyFace(pos, vec3(0, -1, 0), 1, 0, 2);
+} 
