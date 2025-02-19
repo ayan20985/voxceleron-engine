@@ -25,7 +25,7 @@ struct SwapChainSupportDetails {
 
 class SwapChain {
 public:
-    SwapChain(VulkanContext* context);
+    SwapChain(VulkanContext* context, VkSwapchainKHR oldSwapChain = VK_NULL_HANDLE);
     ~SwapChain();
 
     bool initialize(Window* window);
@@ -52,6 +52,7 @@ private:
     VulkanContext* context;
     Window* window;
     SwapChainState state;
+    VkSwapchainKHR oldSwapChain;
     std::string lastErrorMessage;
     
     VkSwapchainKHR swapChain;

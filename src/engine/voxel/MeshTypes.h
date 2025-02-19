@@ -1,38 +1,58 @@
 #pragma once
 
-#include <glm/glm.hpp>
-#include <vector>
 #include <vulkan/vulkan.h>
+#include <vector>
+#include <memory>
+#include <glm/glm.hpp>
+#include <array>
 
 namespace voxceleron {
 
-struct Vertex {
-    glm::vec3 position;
-    glm::vec3 normal;
-    glm::vec2 texCoord;
-    uint32_t material;  // Material ID packed into vertex
-};
-
 struct MeshData {
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
-    VkBuffer vertexBuffer;
-    VkBuffer indexBuffer;
-    VkDeviceMemory vertexMemory;
-    VkDeviceMemory indexMemory;
-    bool needsUpdate;
-    uint32_t lodLevel;
-
-    MeshData() : vertexBuffer(VK_NULL_HANDLE), indexBuffer(VK_NULL_HANDLE),
-                 vertexMemory(VK_NULL_HANDLE), indexMemory(VK_NULL_HANDLE),
-                 needsUpdate(true), lodLevel(0) {}
+    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory vertexMemory = VK_NULL_HANDLE;
+    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory indexMemory = VK_NULL_HANDLE;
+    uint32_t vertexCount = 0;
+    uint32_t indexCount = 0;
 };
 
-// For compute shader output
-struct GPUMeshData {
-    uint32_t vertexCount;
-    uint32_t indexCount;
-    // Followed by vertex and index data in buffer
+// Forward declaration
+class OctreeNode;
+
+struct LeafData {
+    std::vector<uint32_t> data;  // Packed voxel data
+    std::vector<uint8_t> runs;   // RLE compressed runs
 };
 
-} // namespace voxceleron 
+struct InternalData {
+    std::array<std::unique_ptr<OctreeNode>, 8> children;
+};
+
+class OctreeNode {
+public:
+    glm::ivec3 position{0};      // Position in world space
+    uint32_t size{0};            // Size of this node (power of 2)
+    uint32_t level{0};           // Level in octree (0 = root)
+    bool isLeaf{true};           // Is this a leaf node?
+    bool needsUpdate{false};     // Does this node need mesh update?
+    bool isOptimized{false};     // Has this node been optimized?
+    uint32_t optimizedValue{0};  // Value for optimized nodes
+    uint8_t childMask{0};        // Bitmask of active children
+
+    // Mesh data
+    std::vector<MeshData> meshes;
+
+    // Node data (union to save memory)
+    union NodeData {
+        LeafData leaf;
+        InternalData internal;
+
+        NodeData() : leaf() {}  // Initialize as leaf data by default
+        ~NodeData() {}         // Empty destructor
+    } nodeData;
+
+    const std::vector<MeshData>& getMeshes() const { return meshes; }
+};
+
+} // namespace voxceleron

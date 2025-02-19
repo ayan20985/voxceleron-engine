@@ -4,6 +4,8 @@
 #include "../../core/Window.h"
 #include <iostream>
 #include <array>
+#include <chrono>
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace voxceleron {
 
@@ -32,11 +34,15 @@ bool Pipeline::initialize() {
         return false;
     }
 
-    if (!createRenderPass() ||
+    if (!createDescriptorSetLayout() ||
+        !createRenderPass() ||
         !createGraphicsPipeline() ||
         !createFramebuffers() ||
         !createCommandPools() ||
         !createCommandBuffers() ||
+        !createUniformBuffers() ||
+        !createDescriptorPool() ||
+        !createDescriptorSets() ||
         !createSyncObjects() ||
         !createVertexBuffer()) {
         return false;
@@ -46,9 +52,101 @@ bool Pipeline::initialize() {
     return true;
 }
 
+bool Pipeline::createUniformBuffers() {
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+    uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+    uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = bufferSize;
+        bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateBuffer(context->getDevice(), &bufferInfo, nullptr, &uniformBuffers[i]) != VK_SUCCESS) {
+            setError("Failed to create uniform buffer");
+            return false;
+        }
+
+        VkMemoryRequirements memRequirements;
+        vkGetBufferMemoryRequirements(context->getDevice(), uniformBuffers[i], &memRequirements);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = context->findMemoryType(
+            memRequirements.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+        );
+
+        if (vkAllocateMemory(context->getDevice(), &allocInfo, nullptr, &uniformBuffersMemory[i]) != VK_SUCCESS) {
+            setError("Failed to allocate uniform buffer memory");
+            return false;
+        }
+
+        vkBindBufferMemory(context->getDevice(), uniformBuffers[i], uniformBuffersMemory[i], 0);
+
+        // Map the memory persistently
+        vkMapMemory(context->getDevice(), uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
+    }
+
+    return true;
+}
+
+bool Pipeline::createDescriptorSetLayout() {
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboLayoutBinding;
+
+    if (vkCreateDescriptorSetLayout(context->getDevice(), &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+        setError("Failed to create descriptor set layout");
+        return false;
+    }
+
+    return true;
+}
+
 void Pipeline::cleanup() {
     std::cout << "Pipeline: Starting cleanup..." << std::endl;
     waitIdle();
+
+    // Clean up uniform buffers
+    for (size_t i = 0; i < uniformBuffers.size(); i++) {
+        if (uniformBuffersMapped[i]) {
+            vkUnmapMemory(context->getDevice(), uniformBuffersMemory[i]);
+        }
+        if (uniformBuffers[i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer(context->getDevice(), uniformBuffers[i], nullptr);
+        }
+        if (uniformBuffersMemory[i] != VK_NULL_HANDLE) {
+            vkFreeMemory(context->getDevice(), uniformBuffersMemory[i], nullptr);
+        }
+    }
+    uniformBuffers.clear();
+    uniformBuffersMemory.clear();
+    uniformBuffersMapped.clear();
+
+    // Clean up descriptor resources
+    if (descriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(context->getDevice(), descriptorPool, nullptr);
+        descriptorPool = VK_NULL_HANDLE;
+    }
+
+    if (descriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(context->getDevice(), descriptorSetLayout, nullptr);
+        descriptorSetLayout = VK_NULL_HANDLE;
+    }
 
     if (vertexBuffer != VK_NULL_HANDLE) {
         vkDestroyBuffer(context->getDevice(), vertexBuffer, nullptr);
@@ -111,6 +209,7 @@ void Pipeline::cleanup() {
     inFlightFences.clear();
     commandBuffers.clear();
     commandPools.clear();
+    descriptorSets.clear();
 
     state = State::UNINITIALIZED;
     std::cout << "Pipeline: Cleanup complete" << std::endl;
@@ -176,13 +275,37 @@ bool Pipeline::beginFrame() {
     // Bind the graphics pipeline
     vkCmdBindPipeline(commandBuffers[currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-    // Bind vertex buffer and draw
-    VkBuffer vertexBuffers[] = {vertexBuffer};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(commandBuffers[currentFrame], 0, 1, vertexBuffers, offsets);
-    vkCmdDraw(commandBuffers[currentFrame], 3, 1, 0, 0);
+    // Update and bind uniform buffer
+    updateUniformBuffer(currentFrame);
 
+    // Bind descriptor set
+    vkCmdBindDescriptorSets(commandBuffers[currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+
+    // The actual mesh rendering commands will be recorded by WorldRenderer
     return true;
+}
+
+void Pipeline::updateUniformBuffer(uint32_t currentImage) {
+    // Get camera matrices from World through WorldRenderer
+    UniformBufferObject ubo{};
+    
+    // Set the view and projection matrices for this frame
+    if (swapChain) {
+        float aspect = swapChain->getExtent().width / (float)swapChain->getExtent().height;
+        ubo.proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
+        ubo.proj[1][1] *= -1; // Flip Y coordinate for Vulkan
+        
+        // If no camera is set, use a default viewpoint
+        ubo.view = glm::lookAt(
+            glm::vec3(0.0f, 5.0f, 10.0f),  // Position above and back from the scene
+            glm::vec3(0.0f, 0.0f, 0.0f),   // Look at the origin
+            glm::vec3(0.0f, 1.0f, 0.0f)    // Up vector
+        );
+    }
+
+    // Update the uniform buffer
+    memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
 
 bool Pipeline::endFrame() {
@@ -353,10 +476,20 @@ bool Pipeline::createGraphicsPipeline() {
         return false;
     }
 
-    // Pipeline layout
+    // Create push constant range for model matrix
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(glm::mat4);
+
+    // Pipeline layout with descriptor set layout and push constants
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
     if (vkCreatePipelineLayout(context->getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
         setError("Failed to create pipeline layout");
         return false;
@@ -380,19 +513,29 @@ bool Pipeline::createGraphicsPipeline() {
     // Vertex input state
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(Vertex);
+    bindingDescription.stride = 9 * sizeof(float);  // pos(3) + normal(3) + uv(2) + lodBlend(1)
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+    std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions{};
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
-    attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[0].offset = offsetof(Vertex, pos);
+    attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;  // position
+    attributeDescriptions[0].offset = 0;
 
     attributeDescriptions[1].binding = 0;
     attributeDescriptions[1].location = 1;
-    attributeDescriptions[1].format = VK_FORMAT_R32_UINT;
-    attributeDescriptions[1].offset = offsetof(Vertex, color);
+    attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;  // normal
+    attributeDescriptions[1].offset = 3 * sizeof(float);
+
+    attributeDescriptions[2].binding = 0;
+    attributeDescriptions[2].location = 2;
+    attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;    // uv
+    attributeDescriptions[2].offset = 6 * sizeof(float);
+
+    attributeDescriptions[3].binding = 0;
+    attributeDescriptions[3].location = 3;
+    attributeDescriptions[3].format = VK_FORMAT_R32_SFLOAT;      // lodBlend
+    attributeDescriptions[3].offset = 8 * sizeof(float);
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -581,46 +724,8 @@ bool Pipeline::createSyncObjects() {
 }
 
 bool Pipeline::createVertexBuffer() {
-    std::array<Vertex, 3> vertices = {{
-        {{0.0f, -0.5f, 0.0f}, 0},  // Bottom
-        {{0.5f, 0.5f, 0.0f}, 1},   // Top right
-        {{-0.5f, 0.5f, 0.0f}, 2}   // Top left
-    }};
-
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = sizeof(vertices[0]) * vertices.size();
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    if (vkCreateBuffer(context->getDevice(), &bufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS) {
-        setError("Failed to create vertex buffer");
-        return false;
-    }
-
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(context->getDevice(), vertexBuffer, &memRequirements);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = context->findMemoryType(
-        memRequirements.memoryTypeBits,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-    );
-
-    if (vkAllocateMemory(context->getDevice(), &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS) {
-        setError("Failed to allocate vertex buffer memory");
-        return false;
-    }
-
-    vkBindBufferMemory(context->getDevice(), vertexBuffer, vertexBufferMemory, 0);
-
-    void* data;
-    vkMapMemory(context->getDevice(), vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-    memcpy(data, vertices.data(), bufferInfo.size);
-    vkUnmapMemory(context->getDevice(), vertexBufferMemory);
-
+    // Vertex buffer creation is now handled by World class
+    // This function remains for API compatibility
     return true;
 }
 
@@ -655,4 +760,64 @@ std::vector<char> Pipeline::readFile(const std::string& filename) {
     return buffer;
 }
 
-} // namespace voxceleron 
+bool Pipeline::createDescriptorPool() {
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    if (vkCreateDescriptorPool(context->getDevice(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+        setError("Failed to create descriptor pool");
+        return false;
+    }
+
+    return true;
+}
+
+bool Pipeline::createDescriptorSets() {
+    // Resize descriptor sets vector
+    descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+
+    // Prepare layouts for allocation
+    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+    
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.pSetLayouts = layouts.data();
+
+    // Allocate descriptor sets
+    if (vkAllocateDescriptorSets(context->getDevice(), &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+        setError("Failed to allocate descriptor sets");
+        return false;
+    }
+
+    // Update descriptor sets with uniform buffer info
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = uniformBuffers[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject);
+
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descriptorSets[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pBufferInfo = &bufferInfo;
+
+        vkUpdateDescriptorSets(context->getDevice(), 1, &descriptorWrite, 0, nullptr);
+    }
+
+    return true;
+}
+
+} // namespace voxceleron

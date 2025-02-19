@@ -45,6 +45,9 @@ bool World::initialize() {
         return false;
     }
 
+    // Create test scene
+    createTestScene();
+
     // Create compute pipeline for mesh generation
     if (!createComputePipeline()) {
         std::cerr << "World: Failed to create compute pipeline" << std::endl;
@@ -487,6 +490,50 @@ size_t World::countNodesByLevel(uint32_t level) const {
         };
 
     return countRecursive(root.get());
+}
+
+void World::createTestScene() {
+    std::cout << "World: Creating test scene..." << std::endl;
+    
+    // Create a ground plane
+    for (int x = -8; x <= 8; x++) {
+        for (int z = -8; z <= 8; z++) {
+            Voxel groundVoxel;
+            groundVoxel.type = 1;  // Solid voxel
+            groundVoxel.color = 0x808080FF;  // Gray
+            setVoxel(glm::ivec3(x, -2, z), groundVoxel);
+        }
+    }
+
+    // Create some colorful columns
+    const uint32_t colors[] = {
+        0xFF0000FF,  // Red
+        0x00FF00FF,  // Green
+        0x0000FFFF,  // Blue
+        0xFFFF00FF,  // Yellow
+    };
+
+    for (int i = 0; i < 4; i++) {
+        glm::ivec3 pos(-6 + i * 4, -1, -6 + i * 4);
+        for (int y = 0; y < 5; y++) {
+            Voxel voxel;
+            voxel.type = 1;
+            voxel.color = colors[i];
+            setVoxel(pos + glm::ivec3(0, y, 0), voxel);
+        }
+    }
+
+    // Create a small platform
+    for (int x = -2; x <= 2; x++) {
+        for (int z = -2; z <= 2; z++) {
+            Voxel platformVoxel;
+            platformVoxel.type = 1;
+            platformVoxel.color = 0xA0522DFF;  // Brown
+            setVoxel(glm::ivec3(x, 3, z), platformVoxel);
+        }
+    }
+
+    std::cout << "World: Test scene created" << std::endl;
 }
 
 bool World::createComputePipeline() {
@@ -949,6 +996,13 @@ bool World::generateMeshForNode(OctreeNode* node) {
     meshData.indexMemory = indexMemory;
     meshData.vertexCount = vertexCount;
     meshData.indexCount = indexCount;
+
+    // Update node's mesh vector
+    node->meshes.clear();
+    node->meshes.push_back(meshData);
+
+    std::cout << "World: Generated mesh for node with " << vertexCount << " vertices and "
+              << indexCount << " indices" << std::endl;
 
     // Clean up voxel buffer
     vkDestroyBuffer(device, voxelBuffer, nullptr);

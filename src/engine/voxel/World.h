@@ -120,9 +120,10 @@ private:
     std::unique_ptr<WorldRenderer> renderer;
     
     // Vulkan helpers
+    void createTestScene();
     bool createComputePipeline();
-    bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, 
-                     VkMemoryPropertyFlags properties, VkBuffer& buffer, 
+    bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                     VkMemoryPropertyFlags properties, VkBuffer& buffer,
                      VkDeviceMemory& bufferMemory);
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     void cleanupMeshData(MeshData& meshData);

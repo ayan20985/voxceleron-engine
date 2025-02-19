@@ -50,6 +50,7 @@ private:
     VkDevice device;
     VkPhysicalDevice physicalDevice;
     VkPipelineLayout pipelineLayout;
+    VkPipeline graphicsPipeline;  // Graphics pipeline for mesh rendering
     Settings settings;
     bool debugVisualization;
     const Camera* currentCamera;  // Current camera being used for rendering
@@ -92,6 +93,7 @@ private:
     // Vulkan helpers
     bool createDebugResources();
     void cleanupDebugResources();
+    VkShaderModule createShaderModule(const std::string& filename);
 
     // Prevent copying
     WorldRenderer(const WorldRenderer&) = delete;

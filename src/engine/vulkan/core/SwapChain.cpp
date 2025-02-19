@@ -6,14 +6,15 @@
 
 namespace voxceleron {
 
-SwapChain::SwapChain(VulkanContext* context)
+SwapChain::SwapChain(VulkanContext* context, VkSwapchainKHR oldSwapChain)
     : context(context)
     , window(nullptr)
     , state(SwapChainState::UNINITIALIZED)
     , swapChain(VK_NULL_HANDLE)
     , imageFormat(VK_FORMAT_UNDEFINED)
     , extent{0, 0}
-    , renderPass(VK_NULL_HANDLE) {
+    , renderPass(VK_NULL_HANDLE)
+    , oldSwapChain(oldSwapChain) {
     std::cout << "SwapChain: Creating swap chain instance" << std::endl;
 }
 
@@ -350,7 +351,7 @@ bool SwapChain::createSwapChain() {
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     createInfo.presentMode = chooseSwapPresentMode(querySwapChainSupport(physicalDevice, surface).presentModes);
     createInfo.clipped = VK_TRUE;
-    createInfo.oldSwapchain = VK_NULL_HANDLE;
+    createInfo.oldSwapchain = oldSwapChain;
 
     result = vkCreateSwapchainKHR(context->getDevice(), &createInfo, nullptr, &swapChain);
     if (result != VK_SUCCESS) {

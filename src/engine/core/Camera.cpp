@@ -33,6 +33,33 @@ void Camera::initialize(Window* window) {
     std::cout << "Camera: Initialization complete" << std::endl;
 }
 
+void Camera::move(Movement direction, float value) {
+    glm::vec3 movement(0.0f);
+    switch (direction) {
+        case Movement::FORWARD:
+            movement = front * value;
+            break;
+        case Movement::BACKWARD:
+            movement = -front * value;
+            break;
+        case Movement::LEFT:
+            movement = -right * value;
+            break;
+        case Movement::RIGHT:
+            movement = right * value;
+            break;
+        case Movement::UP:
+            movement = worldUp * value;
+            break;
+        case Movement::DOWN:
+            movement = -worldUp * value;
+            break;
+    }
+    
+    state = State::MOVING;
+    targetPosition += movement * settings.moveSpeed;
+}
+
 void Camera::update(float deltaTime) {
     handleKeyInput(deltaTime);
     smoothMove(targetPosition, deltaTime);

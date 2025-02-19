@@ -17,6 +17,16 @@ set(VULKAN_SDK $ENV{VULKAN_SDK})
 set(VULKAN_INCLUDE_DIR "${VULKAN_SDK}/Include")
 set(VULKAN_LIB_DIR "${VULKAN_SDK}/Lib")
 
+# Add Vulkan SDK to system include path
+include_directories(SYSTEM ${VULKAN_INCLUDE_DIR})
+
+# Windows-specific paths
+if(WIN32)
+    set(VULKAN_INCLUDE_DIR "${VULKAN_SDK}/Include")
+    set(VULKAN_LIB_DIR "${VULKAN_SDK}/Lib")
+    set(VULKAN_BIN_DIR "${VULKAN_SDK}/Bin")
+endif()
+
 # Add external dependencies
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/CMakeLists.txt")
     message(FATAL_ERROR "GLFW submodule not found. Please run: git submodule update --init --recursive")

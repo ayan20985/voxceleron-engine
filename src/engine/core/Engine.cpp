@@ -253,13 +253,20 @@ bool Engine::handleWindowResize() {
     // Wait for device to be idle
     vkDeviceWaitIdle(context->getDevice());
 
-    // Recreate swap chain
-    if (!swapChain->recreate(window.get())) {
-        setError("Failed to recreate swap chain");
+    // Store old swap chain
+    VkSwapchainKHR oldSwapChain = swapChain->getHandle();
+    
+    // Create new swap chain
+    auto newSwapChain = std::make_unique<SwapChain>(context.get(), oldSwapChain);
+    if (!newSwapChain->initialize(window.get())) {
+        setError("Failed to create new swap chain");
         return false;
     }
 
-    // Recreate pipeline
+    // Replace old swap chain with new one
+    swapChain = std::move(newSwapChain);
+
+    // Recreate pipeline with new swap chain
     if (!pipeline->recreateIfNeeded()) {
         setError("Failed to recreate pipeline");
         return false;
@@ -343,17 +350,17 @@ void Engine::handleKeyEvent(int key, int action) {
 void Engine::handleAction(const std::string& action, float value) {
     // Handle movement actions
     if (action == "move_forward") {
-        // Forward movement logic
+        camera->move(Camera::Movement::FORWARD, value);
     } else if (action == "move_backward") {
-        // Backward movement logic
+        camera->move(Camera::Movement::BACKWARD, value);
     } else if (action == "move_left") {
-        // Left movement logic
+        camera->move(Camera::Movement::LEFT, value);
     } else if (action == "move_right") {
-        // Right movement logic
+        camera->move(Camera::Movement::RIGHT, value);
     } else if (action == "move_up") {
-        // Up movement logic
+        camera->move(Camera::Movement::UP, value);
     } else if (action == "move_down") {
-        // Down movement logic
+        camera->move(Camera::Movement::DOWN, value);
     }
     
     // Handle other actions

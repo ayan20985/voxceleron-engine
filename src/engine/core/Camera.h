@@ -9,6 +9,15 @@ class Window;
 
 class Camera {
 public:
+    enum class Movement {
+        FORWARD,
+        BACKWARD,
+        LEFT,
+        RIGHT,
+        UP,
+        DOWN
+    };
+
     enum class State {
         IDLE,
         MOVING,
@@ -38,6 +47,7 @@ public:
     State getState() const { return state; }
 
     // Camera control
+    void move(Movement direction, float value);
     void handleKeyInput(float deltaTime);
     void handleMouseMovement(float xOffset, float yOffset, bool constrainPitch = true);
     void handleMouseScroll(float yOffset);

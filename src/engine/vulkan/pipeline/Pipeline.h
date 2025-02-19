@@ -70,10 +70,30 @@ private:
     std::string lastErrorMessage;
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
+    // Buffer resources
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
 
+    // Uniform buffer for camera matrices
+    struct UniformBufferObject {
+        alignas(16) glm::mat4 view;
+        alignas(16) glm::mat4 proj;
+    };
+    std::vector<VkBuffer> uniformBuffers;
+    std::vector<VkDeviceMemory> uniformBuffersMemory;
+    std::vector<void*> uniformBuffersMapped;
+
+    // Descriptor set resources
+    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> descriptorSets;
+
     // Helper functions
+    bool createUniformBuffers();
+    bool createDescriptorSetLayout();
+    bool createDescriptorPool();
+    bool createDescriptorSets();
+    void updateUniformBuffer(uint32_t currentImage);
     bool createRenderPass();
     bool createGraphicsPipeline();
     bool createFramebuffers();
