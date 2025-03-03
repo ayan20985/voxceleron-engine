@@ -1,6 +1,10 @@
 # Voxceleron Engine
 Aim to make a voxel engine that is the modernized version of voxlap using C++ and Vulkan. The final aim is to make a game that can have 64,000 voxel render distances with players being 16x4x4 voxels and 512 concurrent players on a single server.
 
+## old photos
+![Screenshot 2025-01-01 234856](https://github.com/user-attachments/assets/056ab220-96e3-4757-a055-e4bc1fbfaacd)
+![Screenshot 2025-01-01 170329](https://github.com/user-attachments/assets/ff4ada3f-adcd-404b-9dac-cbce6985b949)
+
 ## Current Development Structure
 The current codebase is organized for maintainability and extensibility while laying the groundwork for future scaling:
 
