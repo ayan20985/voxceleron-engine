@@ -1,3 +1,5 @@
+This repo is old, voxceleron2 is in-progress.
+
 # Voxceleron Engine
 Aim to make a voxel engine that is the modernized version of voxlap using C++ and Vulkan. The final aim is to make a game that can have 64,000 voxel render distances with players being 16x4x4 voxels and 512 concurrent players on a single server.
 
