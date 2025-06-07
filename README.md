@@ -1,4 +1,4 @@
-This repo is old, voxceleron2 is in-progress, sneak peek.
+# This repo is old, voxceleron2 is in-progress, sneak peek below.
 ![Screenshot 2025-03-19 163843](https://github.com/user-attachments/assets/bc362069-8d03-46fa-932d-e65f816e7840)
 
 
